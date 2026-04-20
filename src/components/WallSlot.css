@@ -2,7 +2,7 @@
 	box-sizing: border-box;
 	border: 1px dashed #7f7f7f;
 	background: rgba(140, 140, 140, 0.18);
-	pointer-events: none;
+	pointer-events: auto;
 }
 
 .wall-slot.horizontal {
@@ -11,4 +11,13 @@
 
 .wall-slot.vertical {
 	width: 100%;
+}
+
+.wall-slot.selectable {
+	cursor: pointer;
+}
+
+.wall-slot.selected {
+	border: 2px solid #111111;
+	background: rgba(0, 0, 0, 0.28);
 }

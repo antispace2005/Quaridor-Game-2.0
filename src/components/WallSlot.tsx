@@ -5,12 +5,18 @@ interface WallSlotProps {
   position: { x: number; y: number };
   isPlaced?: boolean;
   wallPlayerId?: 0 | 1 | 2 | 3;
+  isSelectable?: boolean;
+  isSelected?: boolean;
+  onClick?: () => void;
 }
 
 export default function WallSlot({
   position,
   isPlaced,
   wallPlayerId,
+  isSelectable,
+  isSelected,
+  onClick,
 }: WallSlotProps) {
   const orientation =
     position.x % 2 === 1 && position.y % 2 === 0 ? "vertical" : "horizontal";
@@ -28,10 +34,11 @@ export default function WallSlot({
 
   return (
     <div
-      className={`wall-slot ${orientation}`}
+      className={`wall-slot ${orientation} ${isSelectable ? "selectable" : ""} ${isSelected ? "selected" : ""}`}
       style={style}
       data-x={position.x}
       data-y={position.y}
+      onClick={onClick}
     >
       {isPlaced && (
         <Wall

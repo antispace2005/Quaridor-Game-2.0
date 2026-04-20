@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import "./Board.css";
 import Tile from "./Tile";
 import WallSlot from "./WallSlot";
@@ -13,8 +13,21 @@ interface BoardProps {
 export default function Board({ boardSize, manager }: BoardProps) {
   const { gameState, setGameState } = useGameState();
   const validMoves = manager.GetValidMoves(gameState);
+  const [selectedWallPosition, setSelectedWallPosition] = useState<
+    { x: number; y: number } | undefined
+  >(undefined);
   const gridSize = boardSize * 2 - 1;
   const cells: ReactNode[] = [];
+
+  const validWallPlacementKeys = useMemo(
+    () =>
+      new Set(
+        validMoves.validWallPlacements.map(
+          (position) => `${position.x},${position.y}`,
+        ),
+      ),
+    [validMoves.validWallPlacements],
+  );
 
   const currentPlayer = gameState.players[gameState.turn];
   const validMoveTargets = new Map<string, MoveDirection>();
@@ -85,6 +98,7 @@ export default function Board({ boardSize, manager }: BoardProps) {
                     const result = manager.MovePlayer(gameState, direction);
                     if (result.isSuccess) {
                       setGameState(result.gameState);
+                      setSelectedWallPosition(undefined);
                     }
                   }
                 : undefined
@@ -114,6 +128,10 @@ export default function Board({ boardSize, manager }: BoardProps) {
       const wallPlayerId = isWallPlaced
         ? (wallMap[posKey] as 0 | 1 | 2 | 3)
         : undefined;
+      const isWallSlotSelectable =
+        !isWallPlaced && validWallPlacementKeys.has(posKey);
+      const isSelectedWallSlot =
+        selectedWallPosition?.x === x && selectedWallPosition?.y === y;
 
       cells.push(
         <WallSlot
@@ -121,20 +139,59 @@ export default function Board({ boardSize, manager }: BoardProps) {
           position={{ x, y }}
           isPlaced={isWallPlaced}
           wallPlayerId={wallPlayerId}
+          isSelectable={isWallSlotSelectable}
+          isSelected={isSelectedWallSlot}
+          onClick={
+            isWallSlotSelectable
+              ? () => {
+                  setSelectedWallPosition((currentValue) => {
+                    if (currentValue?.x === x && currentValue?.y === y) {
+                      return undefined;
+                    }
+
+                    return { x, y };
+                  });
+                }
+              : undefined
+          }
         />,
       );
     }
   }
 
   return (
-    <div
-      className="board"
-      style={{
-        gridTemplateColumns: `repeat(${gridSize}, var(--cell-size))`,
-        gridTemplateRows: `repeat(${gridSize}, var(--cell-size))`,
-      }}
-    >
-      {cells}
+    <div className="board-section">
+      <div
+        className="board"
+        style={{
+          gridTemplateColumns: `repeat(${gridSize}, var(--cell-size))`,
+          gridTemplateRows: `repeat(${gridSize}, var(--cell-size))`,
+        }}
+      >
+        {cells}
+      </div>
+      <button
+        className="confirm-wall-button"
+        disabled={!selectedWallPosition}
+        onClick={() => {
+          if (!selectedWallPosition) {
+            return;
+          }
+
+          const placementResult = manager.PlaceWall(
+            gameState,
+            selectedWallPosition,
+          );
+          if (!placementResult.isSuccess) {
+            return;
+          }
+
+          setGameState(placementResult.gameState);
+          setSelectedWallPosition(undefined);
+        }}
+      >
+        Confirm Wall Placement
+      </button>
     </div>
   );
 }

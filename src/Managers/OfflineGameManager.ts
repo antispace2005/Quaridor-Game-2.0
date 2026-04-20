@@ -188,9 +188,66 @@ export class OfflineGameManager implements GameManager {
   }
 
   PlaceWall(gameState: GameState, position: WallPosition): MoveResult {
-    void gameState;
-    void position;
-    throw new Error("OfflineGameManager.PlaceWall is not implemented yet.");
+    const currentPlayerKey = gameState.turn;
+    const currentPlayer = gameState.players[currentPlayerKey];
+    const currentPlayerId = this.getPlayerIdFromTurn(currentPlayerKey);
+
+    if (!currentPlayer || currentPlayerId === undefined) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    if (currentPlayer.wallsRemaining <= 0) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const validWallPlacements = this.GetValidMoves(gameState).validWallPlacements;
+    const isPlacementValid = validWallPlacements.some(
+      (wallPosition) => wallPosition.x === position.x && wallPosition.y === position.y,
+    );
+
+    if (!isPlacementValid) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const gameStateAfterWall: GameState = {
+      ...gameState,
+      walls: [...gameState.walls, { ...position, playerId: currentPlayerId }],
+    };
+
+    const allPlayersStillHavePath = this.getActivePlayerIds(gameStateAfterWall).every(
+      (playerId) => this.hasPathDepthFirstSearch(gameStateAfterWall, playerId),
+    );
+
+    if (!allPlayersStillHavePath) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    return {
+      gameState: {
+        ...gameStateAfterWall,
+        turn: this.getNextTurn(gameStateAfterWall),
+        players: {
+          ...gameStateAfterWall.players,
+          [currentPlayerKey]: {
+            ...currentPlayer,
+            wallsRemaining: currentPlayer.wallsRemaining - 1,
+          },
+        },
+      },
+      isSuccess: true,
+    };
   }
 
   private getValidPlayerMoves(gameState: GameState): MoveDirection[] {
@@ -505,6 +562,16 @@ export class OfflineGameManager implements GameManager {
     }
 
     return playerIndex as 0 | 1 | 2 | 3;
+  }
+
+  private getActivePlayerIds(gameState: GameState): Array<0 | 1 | 2 | 3> {
+    return PLAYER_ORDER.reduce<Array<0 | 1 | 2 | 3>>((activePlayerIds, playerKey, index) => {
+      if (gameState.players[playerKey]) {
+        activePlayerIds.push(index as 0 | 1 | 2 | 3);
+      }
+
+      return activePlayerIds;
+    }, []);
   }
 
   private getNextTurn(gameState: GameState): GameState["turn"] {
