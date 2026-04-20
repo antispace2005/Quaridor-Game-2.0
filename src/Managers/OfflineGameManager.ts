@@ -20,6 +20,13 @@ interface FloodPathResult {
 
 export class OfflineGameManager implements GameManager {
   GetValidMoves(gameState: GameState): ValidMoves {
+    if (gameState.status !== "in_progress") {
+      return {
+        validPlayerMoves: [],
+        validWallPlacements: [],
+      };
+    }
+
     const currentPlayerId = this.getPlayerIdFromTurn(gameState.turn);
     if (currentPlayerId !== undefined) {
       if (false) {
@@ -151,6 +158,13 @@ export class OfflineGameManager implements GameManager {
   }
 
   MovePlayer(gameState: GameState, direction: MoveDirection): MoveResult {
+    if (gameState.status !== "in_progress") {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
     const validMoves = this.GetValidMoves(gameState).validPlayerMoves;
     if (!validMoves.includes(direction)) {
       return {
@@ -169,12 +183,14 @@ export class OfflineGameManager implements GameManager {
     }
 
     const nextPosition = this.getNextPosition(currentPlayer.position, direction);
+    const hasWon = this.hasReachedGoalRow(currentPlayer.goalRow, nextPosition.y);
     const nextTurn = this.getNextTurn(gameState);
 
     return {
       gameState: {
         ...gameState,
-        turn: nextTurn,
+        status: hasWon ? "finished" : gameState.status,
+        turn: hasWon ? currentPlayerKey : nextTurn,
         players: {
           ...gameState.players,
           [currentPlayerKey]: {
@@ -188,6 +204,13 @@ export class OfflineGameManager implements GameManager {
   }
 
   PlaceWall(gameState: GameState, position: WallPosition): MoveResult {
+    if (gameState.status !== "in_progress") {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
     const currentPlayerKey = gameState.turn;
     const currentPlayer = gameState.players[currentPlayerKey];
     const currentPlayerId = this.getPlayerIdFromTurn(currentPlayerKey);
@@ -690,6 +713,10 @@ export class OfflineGameManager implements GameManager {
       { x: position.x, y: position.y },
       { x: position.x + 2, y: position.y },
     ];
+  }
+
+  private hasReachedGoalRow(goalRow: number, y: number) {
+    return goalRow === y;
   }
 
   private isInsideBoard(position: { x: number; y: number }, gridLimit: number) {

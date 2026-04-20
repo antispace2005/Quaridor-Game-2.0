@@ -39,6 +39,21 @@ export function GameContainer({
   initialState: GameState;
 }) {
   const [gameState, setGameState] = React.useState(initialState);
+  const hasShownFinishedAlert = React.useRef(false);
+
+  React.useEffect(() => {
+    if (gameState.status !== "finished") {
+      hasShownFinishedAlert.current = false;
+      return;
+    }
+
+    if (hasShownFinishedAlert.current) {
+      return;
+    }
+
+    hasShownFinishedAlert.current = true;
+    window.alert(`${gameState.turn} won`);
+  }, [gameState.status, gameState.turn]);
 
   return (
     <GameContext.Provider value={{ gameState, setGameState }}>
