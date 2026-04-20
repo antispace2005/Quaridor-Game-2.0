@@ -11,12 +11,143 @@ type PlayerKey = keyof GameState["players"];
 
 const PLAYER_ORDER: PlayerKey[] = ["player1", "player2", "player3", "player4"];
 
+interface FloodPathResult {
+  found: boolean;
+  movesNeeded: number;
+  moves: MoveDirection[];
+  exploredNodes: string[];
+}
+
 export class OfflineGameManager implements GameManager {
   GetValidMoves(gameState: GameState): ValidMoves {
+    const currentPlayerId = this.getPlayerIdFromTurn(gameState.turn);
+    if (currentPlayerId !== undefined) {
+      if (false) {
+        void this.floodShortestPath(gameState, currentPlayerId as 0 | 1 | 2 | 3);
+        void this.hasPathDepthFirstSearch(gameState, currentPlayerId as 0 | 1 | 2 | 3);
+      }
+    }
+
     return {
       validPlayerMoves: this.getValidPlayerMoves(gameState),
       validWallPlacements: this.getValidWallPlacements(gameState),
     };
+  }
+
+  private floodShortestPath(gameState: GameState, playerId: 0 | 1 | 2 | 3): FloodPathResult {
+    const playerKey = this.getPlayerKeyFromPlayerId(playerId);
+    const player = playerKey ? gameState.players[playerKey] : undefined;
+
+    if (!player) {
+      return {
+        found: false,
+        movesNeeded: 0,
+        moves: [],
+        exploredNodes: [],
+      };
+    }
+
+    const occupiedTiles = this.getOccupiedTiles(gameState, playerKey);
+    const wallSet = this.getWallSet(gameState);
+    const gridLimit = gameState.boardSize * 2 - 1;
+    const visited = new Set<string>([this.toKey(player.position.x, player.position.y)]);
+    const exploredNodes: string[] = [];
+    const queue: Array<{ position: { x: number; y: number }; moves: MoveDirection[] }> = [
+      { position: player.position, moves: [] },
+    ];
+
+    while (queue.length > 0) {
+      const currentNode = queue.shift();
+      if (!currentNode) {
+        continue;
+      }
+
+      const currentKey = this.toKey(currentNode.position.x, currentNode.position.y);
+      exploredNodes.push(currentKey);
+
+      if (currentNode.position.y === player.goalRow) {
+        return {
+          found: true,
+          movesNeeded: currentNode.moves.length,
+          moves: currentNode.moves,
+          exploredNodes,
+        };
+      }
+
+      const nextMoves = this.getValidPlayerMovesFromPosition(
+        currentNode.position,
+        occupiedTiles,
+        wallSet,
+        gridLimit,
+      );
+
+      nextMoves.forEach((moveDirection) => {
+        const nextPosition = this.getNextPosition(currentNode.position, moveDirection);
+        const nextKey = this.toKey(nextPosition.x, nextPosition.y);
+
+        if (visited.has(nextKey)) {
+          return;
+        }
+
+        visited.add(nextKey);
+        queue.push({
+          position: nextPosition,
+          moves: [...currentNode.moves, moveDirection],
+        });
+      });
+    }
+
+    return {
+      found: false,
+      movesNeeded: 0,
+      moves: [],
+      exploredNodes,
+    };
+  }
+
+  private hasPathDepthFirstSearch(gameState: GameState, playerId: 0 | 1 | 2 | 3): boolean {
+    const playerKey = this.getPlayerKeyFromPlayerId(playerId);
+    const player = playerKey ? gameState.players[playerKey] : undefined;
+
+    if (!player) {
+      return false;
+    }
+
+    const occupiedTiles = this.getOccupiedTiles(gameState, playerKey);
+    const wallSet = this.getWallSet(gameState);
+    const gridLimit = gameState.boardSize * 2 - 1;
+    const visited = new Set<string>();
+
+    const search = (position: { x: number; y: number }): boolean => {
+      const positionKey = this.toKey(position.x, position.y);
+      if (visited.has(positionKey)) {
+        return false;
+      }
+
+      visited.add(positionKey);
+
+      if (position.y === player.goalRow) {
+        return true;
+      }
+
+      const nextMoves = this.getValidPlayerMovesFromPosition(
+        position,
+        occupiedTiles,
+        wallSet,
+        gridLimit,
+      );
+
+      for (const moveDirection of nextMoves) {
+        const nextPosition = this.getNextPosition(position, moveDirection);
+        if (search(nextPosition)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    return search(player.position);
   }
 
   MovePlayer(gameState: GameState, direction: MoveDirection): MoveResult {
@@ -69,10 +200,57 @@ export class OfflineGameManager implements GameManager {
     }
 
     const currentPosition = currentPlayer.position;
-    const occupiedTiles = this.getOccupiedTiles(gameState);
+    const occupiedTiles = this.getOccupiedTiles(gameState, gameState.turn);
     const wallSet = this.getWallSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
 
+    return this.getValidPlayerMovesFromPosition(
+      currentPosition,
+      occupiedTiles,
+      wallSet,
+      gridLimit,
+    );
+  }
+
+  private getValidWallPlacements(gameState: GameState): WallPosition[] {
+    const wallSet = this.getWallSet(gameState);
+    const gridLimit = gameState.boardSize * 2 - 1;
+    const validWallPlacements: WallPosition[] = [];
+
+    for (let y = 0; y < gridLimit; y += 1) {
+      for (let x = 0; x < gridLimit; x += 1) {
+        const isVerticalCandidate = x % 2 === 1 && y % 2 === 0;
+        const isHorizontalCandidate = x % 2 === 0 && y % 2 === 1;
+
+        if (!isVerticalCandidate && !isHorizontalCandidate) {
+          continue;
+        }
+
+        if (isVerticalCandidate && y + 2 >= gridLimit) {
+          continue;
+        }
+
+        if (isHorizontalCandidate && x + 2 >= gridLimit) {
+          continue;
+        }
+
+        if (wallSet.has(this.toKey(x, y))) {
+          continue;
+        }
+
+        validWallPlacements.push({ x, y });
+      }
+    }
+
+    return validWallPlacements;
+  }
+
+  private getValidPlayerMovesFromPosition(
+    currentPosition: { x: number; y: number },
+    occupiedTiles: Set<string>,
+    wallSet: Set<string>,
+    gridLimit: number,
+  ): MoveDirection[] {
     const validMoves: MoveDirection[] = [];
 
     this.evaluateDirection({
@@ -109,39 +287,6 @@ export class OfflineGameManager implements GameManager {
     });
 
     return validMoves;
-  }
-
-  private getValidWallPlacements(gameState: GameState): WallPosition[] {
-    const wallSet = this.getWallSet(gameState);
-    const gridLimit = gameState.boardSize * 2 - 1;
-    const validWallPlacements: WallPosition[] = [];
-
-    for (let y = 0; y < gridLimit; y += 1) {
-      for (let x = 0; x < gridLimit; x += 1) {
-        const isVerticalCandidate = x % 2 === 1 && y % 2 === 0;
-        const isHorizontalCandidate = x % 2 === 0 && y % 2 === 1;
-
-        if (!isVerticalCandidate && !isHorizontalCandidate) {
-          continue;
-        }
-
-        if (isVerticalCandidate && y + 2 >= gridLimit) {
-          continue;
-        }
-
-        if (isHorizontalCandidate && x + 2 >= gridLimit) {
-          continue;
-        }
-
-        if (wallSet.has(this.toKey(x, y))) {
-          continue;
-        }
-
-        validWallPlacements.push({ x, y });
-      }
-    }
-
-    return validWallPlacements;
   }
 
   private evaluateDirection({
@@ -349,6 +494,19 @@ export class OfflineGameManager implements GameManager {
     }
   }
 
+  private getPlayerKeyFromPlayerId(playerId: 0 | 1 | 2 | 3): PlayerKey | undefined {
+    return PLAYER_ORDER[playerId];
+  }
+
+  private getPlayerIdFromTurn(turn: GameState["turn"]): 0 | 1 | 2 | 3 | undefined {
+    const playerIndex = PLAYER_ORDER.indexOf(turn as PlayerKey);
+    if (playerIndex < 0) {
+      return undefined;
+    }
+
+    return playerIndex as 0 | 1 | 2 | 3;
+  }
+
   private getNextTurn(gameState: GameState): GameState["turn"] {
     const availablePlayers = PLAYER_ORDER.filter((playerKey) => gameState.players[playerKey]);
     if (availablePlayers.length === 0) {
@@ -380,10 +538,14 @@ export class OfflineGameManager implements GameManager {
     return gameState.players[gameState.turn];
   }
 
-  private getOccupiedTiles(gameState: GameState): Set<string> {
+  private getOccupiedTiles(gameState: GameState, excludePlayerKey?: PlayerKey): Set<string> {
     const occupiedTiles = new Set<string>();
 
     PLAYER_ORDER.forEach((playerKey) => {
+      if (playerKey === excludePlayerKey) {
+        return;
+      }
+
       const player = gameState.players[playerKey];
       if (!player) {
         return;
