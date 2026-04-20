@@ -24,8 +24,16 @@ export interface GameState {
   }>;
 }
 
+export type PlayerRole = "human" | "ai";
+
+export type PlayerControlState = Record<
+  "player1" | "player2" | "player3" | "player4",
+  PlayerRole
+>;
+
 interface GameContextType {
   gameState: GameState;
+  controls: PlayerControlState;
   setGameState: (state: GameState) => void;
 }
 
@@ -34,11 +42,14 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 export function GameContainer({
   children,
   initialState,
+  initialControls,
 }: {
   children: ReactNode;
   initialState: GameState;
+  initialControls: PlayerControlState;
 }) {
   const [gameState, setGameState] = React.useState(initialState);
+  const [controls] = React.useState(initialControls);
   const hasShownFinishedAlert = React.useRef(false);
 
   React.useEffect(() => {
@@ -56,7 +67,7 @@ export function GameContainer({
   }, [gameState.status, gameState.turn]);
 
   return (
-    <GameContext.Provider value={{ gameState, setGameState }}>
+    <GameContext.Provider value={{ gameState, controls, setGameState }}>
       {children}
     </GameContext.Provider>
   );
