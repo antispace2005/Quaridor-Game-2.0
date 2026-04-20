@@ -44,6 +44,7 @@ export function createFourPlayerGameState(
         position: { x: 16, y: 8 },
         wallsRemaining: 5,
         goalRow: 0,
+        goalColumn: 0,
       },
       player3: {
         position: { x: 8, y: 16 },
@@ -54,6 +55,7 @@ export function createFourPlayerGameState(
         position: { x: 0, y: 8 },
         wallsRemaining: 5,
         goalRow: 16,
+        goalColumn: 16,
       },
     },
     walls: [],

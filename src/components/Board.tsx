@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import "./Board.css";
 import Tile from "./Tile";
 import WallSlot from "./WallSlot";
@@ -11,7 +11,7 @@ interface BoardProps {
 }
 
 export default function Board({ boardSize, manager }: BoardProps) {
-  const { gameState, setGameState } = useGameState();
+  const { gameState, setGameState, controls } = useGameState();
   const validMoves = manager.GetValidMoves(gameState);
   const [selectedWallPosition, setSelectedWallPosition] = useState<
     { x: number; y: number } | undefined
@@ -41,6 +41,33 @@ export default function Board({ boardSize, manager }: BoardProps) {
       );
     });
   }
+
+  useEffect(() => {
+    const shouldAutoPlayAiTurn =
+      controls.type === "1v1" &&
+      controls.diff !== "none" &&
+      controls.diff !== "online" &&
+      gameState.status === "in_progress" &&
+      gameState.turn === "player2";
+
+    if (!shouldAutoPlayAiTurn) {
+      return;
+    }
+
+    const aiResult =
+      controls.diff === "easy"
+        ? manager.GetAIMoveEasy(gameState)
+        : controls.diff === "normal"
+          ? manager.GetAIMoveNormal(gameState)
+          : controls.diff === "hard"
+            ? manager.GetAIMoveHard(gameState)
+            : manager.GetAIMoveExpert(gameState);
+
+    if (aiResult.isSuccess) {
+      setGameState(aiResult.gameState);
+      setSelectedWallPosition(undefined);
+    }
+  }, [controls.diff, controls.type, gameState, manager, setGameState]);
 
   // Create a map of player positions for quick lookup
   const playerPositions: Record<string, number> = {};

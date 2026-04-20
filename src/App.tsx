@@ -16,20 +16,13 @@ function App() {
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [gameSetup, setGameSetup] = useState<GameSetup>({
-    mode: "two-player",
-    controls: {
-      player1: "human",
-      player2: "human",
-      player3: "ai",
-      player4: "ai",
-    },
+    mode: "1v1",
+    type: "1v1",
+    diff: "none",
   });
 
   const initialState = useMemo<GameState>(() => {
-    if (
-      gameSetup.mode === "four-player" ||
-      gameSetup.mode === "four-player-ai"
-    ) {
+    if (gameSetup.mode === "1v1v1v1") {
       return createFourPlayerGameState("player1");
     }
 
@@ -60,7 +53,10 @@ function App() {
         <GameContainer
           key={sessionKey}
           initialState={initialState}
-          initialControls={gameSetup.controls}
+          initialControls={{
+            type: gameSetup.type,
+            diff: gameSetup.diff,
+          }}
         >
           <Board boardSize={9} manager={offlineGameManager} />
         </GameContainer>

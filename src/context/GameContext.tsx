@@ -5,6 +5,7 @@ export interface PlayerState {
   position: { x: number; y: number };
   wallsRemaining: number;
   goalRow: number;
+  goalColumn?: number;
 }
 
 export interface GameState {
@@ -24,16 +25,19 @@ export interface GameState {
   }>;
 }
 
-export type PlayerRole = "human" | "ai";
+export type AiDifficulty = "easy" | "normal" | "hard" | "expert";
 
-export type PlayerControlState = Record<
-  "player1" | "player2" | "player3" | "player4",
-  PlayerRole
->;
+export type GameType = "1v1" | "1v1v1v1";
+export type GameDiff = AiDifficulty | "none" | "online";
+
+export interface GameControlsState {
+  type: GameType;
+  diff: GameDiff;
+}
 
 interface GameContextType {
   gameState: GameState;
-  controls: PlayerControlState;
+  controls: GameControlsState;
   setGameState: (state: GameState) => void;
 }
 
@@ -46,7 +50,7 @@ export function GameContainer({
 }: {
   children: ReactNode;
   initialState: GameState;
-  initialControls: PlayerControlState;
+  initialControls: GameControlsState;
 }) {
   const [gameState, setGameState] = React.useState(initialState);
   const [controls] = React.useState(initialControls);

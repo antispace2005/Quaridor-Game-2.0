@@ -1,19 +1,13 @@
 import "./MainMenu.css";
 
-export type MenuMode =
-  | "two-player"
-  | "two-player-ai"
-  | "four-player"
-  | "four-player-ai";
-export type PlayerRole = "human" | "ai";
-export type PlayerControlState = Record<
-  "player1" | "player2" | "player3" | "player4",
-  PlayerRole
->;
+export type MenuMode = "1v1" | "1v1ai" | "1v1v1v1";
+export type AiDifficulty = "easy" | "normal" | "hard" | "expert";
+export type GameDiff = AiDifficulty | "none" | "online";
 
 export interface GameSetup {
   mode: MenuMode;
-  controls: PlayerControlState;
+  type: "1v1" | "1v1v1v1";
+  diff: GameDiff;
 }
 
 interface MainMenuProps {
@@ -23,56 +17,28 @@ interface MainMenuProps {
   onRestartGame: () => void;
 }
 
-const DEFAULT_CONTROLS: PlayerControlState = {
-  player1: "human",
-  player2: "human",
-  player3: "ai",
-  player4: "ai",
-};
-
 export default function MainMenu({
   currentSetup,
   onSetupChange,
   onStartGame,
   onRestartGame,
 }: MainMenuProps) {
-  const isFourPlayerMode =
-    currentSetup.mode === "four-player" ||
-    currentSetup.mode === "four-player-ai";
-  const isAiMode =
-    currentSetup.mode === "two-player-ai" ||
-    currentSetup.mode === "four-player-ai";
+  const isAiMode = currentSetup.mode === "1v1ai";
 
   const updateMode = (mode: MenuMode) => {
     onSetupChange({
       mode,
-      controls:
-        mode === "four-player" || mode === "four-player-ai"
-          ? currentSetup.controls
-          : {
-              ...DEFAULT_CONTROLS,
-              player3: "ai",
-              player4: "ai",
-            },
+      type: mode === "1v1v1v1" ? "1v1v1v1" : "1v1",
+      diff:
+        mode === "1v1ai"
+          ? currentSetup.diff === "none" || currentSetup.diff === "online"
+            ? "normal"
+            : currentSetup.diff
+          : mode === "1v1v1v1"
+            ? "none"
+            : "none",
     });
   };
-
-  const updateControl = (
-    playerKey: keyof PlayerControlState,
-    role: PlayerRole,
-  ) => {
-    onSetupChange({
-      ...currentSetup,
-      controls: {
-        ...currentSetup.controls,
-        [playerKey]: role,
-      },
-    });
-  };
-
-  const playerKeys: Array<keyof PlayerControlState> = isFourPlayerMode
-    ? ["player1", "player2", "player3", "player4"]
-    : ["player1", "player2"];
 
   return (
     <div className="main-menu">
@@ -85,72 +51,51 @@ export default function MainMenu({
           <div className="main-menu__button-row">
             <button
               type="button"
-              className={currentSetup.mode === "two-player" ? "selected" : ""}
-              onClick={() => updateMode("two-player")}
+              className={currentSetup.mode === "1v1" ? "selected" : ""}
+              onClick={() => updateMode("1v1")}
             >
-              1v1 Human
+              1v1
             </button>
             <button
               type="button"
-              className={
-                currentSetup.mode === "two-player-ai" ? "selected" : ""
-              }
-              onClick={() => updateMode("two-player-ai")}
+              className={currentSetup.mode === "1v1ai" ? "selected" : ""}
+              onClick={() => updateMode("1v1ai")}
             >
               1v1 AI
             </button>
             <button
               type="button"
-              className={currentSetup.mode === "four-player" ? "selected" : ""}
-              onClick={() => updateMode("four-player")}
+              className={currentSetup.mode === "1v1v1v1" ? "selected" : ""}
+              onClick={() => updateMode("1v1v1v1")}
             >
-              1v1v1v1 Human
-            </button>
-            <button
-              type="button"
-              className={
-                currentSetup.mode === "four-player-ai" ? "selected" : ""
-              }
-              onClick={() => updateMode("four-player-ai")}
-            >
-              1v1v1v1 AI
+              1v1v1v1
             </button>
           </div>
         </section>
 
         {isAiMode ? (
           <section className="main-menu__section">
-            <h2>Player Control</h2>
-            <div className="main-menu__player-grid">
-              {playerKeys.map((playerKey) => (
-                <div key={playerKey} className="main-menu__player-card">
-                  <span>{playerKey}</span>
-                  <div className="main-menu__button-row compact">
-                    <button
-                      type="button"
-                      className={
-                        currentSetup.controls[playerKey] === "human"
-                          ? "selected"
-                          : ""
-                      }
-                      onClick={() => updateControl(playerKey, "human")}
-                    >
-                      Human
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        currentSetup.controls[playerKey] === "ai"
-                          ? "selected"
-                          : ""
-                      }
-                      onClick={() => updateControl(playerKey, "ai")}
-                    >
-                      AI
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <h2>AI Difficulty</h2>
+            <div className="main-menu__button-row">
+              {(["easy", "normal", "hard", "expert"] as const).map(
+                (difficulty) => (
+                  <button
+                    key={difficulty}
+                    type="button"
+                    className={
+                      currentSetup.diff === difficulty ? "selected" : ""
+                    }
+                    onClick={() =>
+                      onSetupChange({
+                        ...currentSetup,
+                        diff: difficulty,
+                      })
+                    }
+                  >
+                    {difficulty}
+                  </button>
+                ),
+              )}
             </div>
           </section>
         ) : (

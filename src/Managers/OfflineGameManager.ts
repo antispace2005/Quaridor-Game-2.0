@@ -1,4 +1,4 @@
-import type { GameState } from "../context/GameContext";
+import type { AiDifficulty, GameState } from "../context/GameContext";
 import type {
   GameManager,
   MoveDirection,
@@ -72,7 +72,7 @@ export class OfflineGameManager implements GameManager {
       const currentKey = this.toKey(currentNode.position.x, currentNode.position.y);
       exploredNodes.push(currentKey);
 
-      if (currentNode.position.y === player.goalRow) {
+      if (this.hasPlayerReachedGoal(player, currentNode.position)) {
         return {
           found: true,
           movesNeeded: currentNode.moves.length,
@@ -133,7 +133,7 @@ export class OfflineGameManager implements GameManager {
 
       visited.add(positionKey);
 
-      if (position.y === player.goalRow) {
+      if (this.hasPlayerReachedGoal(player, position)) {
         return true;
       }
 
@@ -183,7 +183,7 @@ export class OfflineGameManager implements GameManager {
     }
 
     const nextPosition = this.getNextPosition(currentPlayer.position, direction);
-    const hasWon = this.hasReachedGoalRow(currentPlayer.goalRow, nextPosition.y);
+    const hasWon = this.hasPlayerReachedGoal(currentPlayer, nextPosition);
     const nextTurn = this.getNextTurn(gameState);
 
     return {
@@ -271,6 +271,214 @@ export class OfflineGameManager implements GameManager {
       },
       isSuccess: true,
     };
+  }
+
+  GetAIMoveEasy(gameState: GameState): MoveResult {
+    return this.runAIMinimax(gameState, this.getAIDepth("easy"));
+  }
+
+  GetAIMoveNormal(gameState: GameState): MoveResult {
+    return this.runAIMinimax(gameState, this.getAIDepth("normal"));
+  }
+
+  GetAIMoveHard(gameState: GameState): MoveResult {
+    return this.runAIMinimax(gameState, this.getAIDepth("hard"));
+  }
+
+  GetAIMoveExpert(gameState: GameState): MoveResult {
+    return this.runAIMinimax(gameState, this.getAIDepth("expert"));
+  }
+
+  private runAIMinimax(gameState: GameState, depth: number): MoveResult {
+    if (gameState.status !== "in_progress") {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const aiPlayerKey = gameState.turn as PlayerKey;
+    const searchResult = this.minimax(gameState, depth, -Infinity, Infinity, aiPlayerKey);
+
+    if (!searchResult.moveResult) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    return searchResult.moveResult;
+  }
+
+  private minimax(
+    gameState: GameState,
+    depth: number,
+    alpha: number,
+    beta: number,
+    aiPlayerKey: PlayerKey,
+  ): { score: number; moveResult: MoveResult | null } {
+    if (depth === 0 || gameState.status !== "in_progress") {
+      return {
+        score: this.evaluateGameState(gameState, aiPlayerKey),
+        moveResult: null,
+      };
+    }
+
+    const actions = this.getCandidateActions(gameState);
+    if (actions.length === 0) {
+      return {
+        score: this.evaluateGameState(gameState, aiPlayerKey),
+        moveResult: null,
+      };
+    }
+
+    const maximizing = gameState.turn === aiPlayerKey;
+    let bestScore = maximizing ? -Infinity : Infinity;
+    let bestMoveResult: MoveResult | null = null;
+
+    for (const action of actions) {
+      const childResult = this.applyAction(gameState, action);
+      if (!childResult.isSuccess) {
+        continue;
+      }
+
+      const searchResult = this.minimax(
+        childResult.gameState,
+        depth - 1,
+        alpha,
+        beta,
+        aiPlayerKey,
+      );
+
+      if (maximizing) {
+        if (searchResult.score > bestScore) {
+          bestScore = searchResult.score;
+          bestMoveResult = childResult;
+        }
+
+        alpha = Math.max(alpha, bestScore);
+      } else {
+        if (searchResult.score < bestScore) {
+          bestScore = searchResult.score;
+          bestMoveResult = childResult;
+        }
+
+        beta = Math.min(beta, bestScore);
+      }
+
+      if (beta <= alpha) {
+        break;
+      }
+    }
+
+    return {
+      score: bestScore,
+      moveResult: bestMoveResult,
+    };
+  }
+
+  private getCandidateActions(gameState: GameState): Array<
+    | { kind: "move"; direction: MoveDirection }
+    | { kind: "wall"; position: WallPosition }
+  > {
+    const validMoves = this.GetValidMoves(gameState);
+    const actions: Array<
+      | { kind: "move"; direction: MoveDirection }
+      | { kind: "wall"; position: WallPosition }
+    > = validMoves.validPlayerMoves.map((direction) => ({
+      kind: "move",
+      direction,
+    }));
+
+    const currentPlayer = this.getCurrentPlayer(gameState);
+    if (currentPlayer && currentPlayer.wallsRemaining > 0) {
+      validMoves.validWallPlacements.forEach((position) => {
+        actions.push({
+          kind: "wall",
+          position,
+        });
+      });
+    }
+
+    return actions;
+  }
+
+  private applyAction(
+    gameState: GameState,
+    action:
+      | { kind: "move"; direction: MoveDirection }
+      | { kind: "wall"; position: WallPosition },
+  ): MoveResult {
+    if (action.kind === "move") {
+      return this.MovePlayer(gameState, action.direction);
+    }
+
+    return this.PlaceWall(gameState, action.position);
+  }
+
+  private getAIDepth(difficulty: AiDifficulty): number {
+    switch (difficulty) {
+      case "easy":
+        return 1;
+      case "normal":
+        return 2;
+      case "hard":
+        return 3;
+      case "expert":
+        return 4;
+    }
+  }
+
+  private evaluateGameState(gameState: GameState, aiPlayerKey: PlayerKey): number {
+    if (gameState.status === "finished") {
+      return gameState.turn === aiPlayerKey ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+    }
+
+    const aiPlayerId = this.getPlayerIdFromPlayerKey(aiPlayerKey);
+    if (aiPlayerId === undefined) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const aiPath = this.getShortestPathMovesNeeded(gameState, aiPlayerId);
+    if (!Number.isFinite(aiPath)) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const opponentPlayerIds = this.getActivePlayerIds(gameState).filter((playerId) => playerId !== aiPlayerId);
+    const opponentPaths = opponentPlayerIds
+      .map((playerId) => this.getShortestPathMovesNeeded(gameState, playerId))
+      .filter((pathLength) => Number.isFinite(pathLength));
+
+    const closestOpponentPath = opponentPaths.length > 0 ? Math.min(...opponentPaths) : aiPath;
+    const aiWallsRemaining = gameState.players[aiPlayerKey]?.wallsRemaining ?? 0;
+    const opponentWalls = opponentPlayerIds
+      .map((playerId) => {
+        const playerKey = this.getPlayerKeyFromPlayerId(playerId);
+        return playerKey ? gameState.players[playerKey]?.wallsRemaining ?? 0 : 0;
+      })
+      .filter((wallsRemaining) => Number.isFinite(wallsRemaining));
+    const averageOpponentWalls = opponentWalls.length > 0
+      ? opponentWalls.reduce((totalWalls, wallsRemaining) => totalWalls + wallsRemaining, 0) / opponentWalls.length
+      : 0;
+
+    const pathScore = (closestOpponentPath - aiPath) * 100;
+    const wallScore = (aiWallsRemaining - averageOpponentWalls) * 10;
+
+    return pathScore + wallScore;
+  }
+
+  private getShortestPathMovesNeeded(gameState: GameState, playerId: 0 | 1 | 2 | 3): number {
+    const result = this.floodShortestPath(gameState, playerId);
+    return result.found ? result.movesNeeded : Number.POSITIVE_INFINITY;
+  }
+
+  private getPlayerIdFromPlayerKey(playerKey: PlayerKey): 0 | 1 | 2 | 3 | undefined {
+    const playerIndex = PLAYER_ORDER.indexOf(playerKey);
+    if (playerIndex < 0) {
+      return undefined;
+    }
+
+    return playerIndex as 0 | 1 | 2 | 3;
   }
 
   private getValidPlayerMoves(gameState: GameState): MoveDirection[] {
@@ -715,8 +923,15 @@ export class OfflineGameManager implements GameManager {
     ];
   }
 
-  private hasReachedGoalRow(goalRow: number, y: number) {
-    return goalRow === y;
+  private hasPlayerReachedGoal(
+    player: NonNullable<GameState["players"][PlayerKey]>,
+    position: { x: number; y: number },
+  ) {
+    if (player.goalColumn !== undefined) {
+      return position.x === player.goalColumn;
+    }
+
+    return position.y === player.goalRow;
   }
 
   private isInsideBoard(position: { x: number; y: number }, gridLimit: number) {
