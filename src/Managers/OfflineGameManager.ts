@@ -20,9 +20,40 @@ export class OfflineGameManager implements GameManager {
   }
 
   MovePlayer(gameState: GameState, direction: MoveDirection): MoveResult {
-    void gameState;
-    void direction;
-    throw new Error("OfflineGameManager.MovePlayer is not implemented yet.");
+    const validMoves = this.GetValidMoves(gameState).validPlayerMoves;
+    if (!validMoves.includes(direction)) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const currentPlayerKey = gameState.turn;
+    const currentPlayer = gameState.players[currentPlayerKey];
+    if (!currentPlayer) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const nextPosition = this.getNextPosition(currentPlayer.position, direction);
+    const nextTurn = this.getNextTurn(gameState);
+
+    return {
+      gameState: {
+        ...gameState,
+        turn: nextTurn,
+        players: {
+          ...gameState.players,
+          [currentPlayerKey]: {
+            ...currentPlayer,
+            position: nextPosition,
+          },
+        },
+      },
+      isSuccess: true,
+    };
   }
 
   PlaceWall(gameState: GameState, position: WallPosition): MoveResult {
@@ -287,6 +318,46 @@ export class OfflineGameManager implements GameManager {
     }
 
     return { moveX: 2, moveY: 0, wallX: 1, wallY: 0 };
+  }
+
+  private getNextPosition(position: { x: number; y: number }, direction: MoveDirection) {
+    switch (direction) {
+      case "up":
+        return { x: position.x, y: position.y - 2 };
+      case "down":
+        return { x: position.x, y: position.y + 2 };
+      case "left":
+        return { x: position.x - 2, y: position.y };
+      case "right":
+        return { x: position.x + 2, y: position.y };
+      case "upJump":
+        return { x: position.x, y: position.y - 4 };
+      case "downJump":
+        return { x: position.x, y: position.y + 4 };
+      case "leftJump":
+        return { x: position.x - 4, y: position.y };
+      case "rightJump":
+        return { x: position.x + 4, y: position.y };
+      case "upRight":
+        return { x: position.x + 2, y: position.y - 2 };
+      case "upLeft":
+        return { x: position.x - 2, y: position.y - 2 };
+      case "downRight":
+        return { x: position.x + 2, y: position.y + 2 };
+      case "downLeft":
+        return { x: position.x - 2, y: position.y + 2 };
+    }
+  }
+
+  private getNextTurn(gameState: GameState): GameState["turn"] {
+    const availablePlayers = PLAYER_ORDER.filter((playerKey) => gameState.players[playerKey]);
+    if (availablePlayers.length === 0) {
+      return gameState.turn;
+    }
+
+    const currentIndex = availablePlayers.indexOf(gameState.turn);
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % availablePlayers.length;
+    return availablePlayers[nextIndex] ?? gameState.turn;
   }
 
   private toJumpDirection(direction: Exclude<MoveDirection, "upJump" | "downJump" | "leftJump" | "rightJump" | "upRight" | "upLeft" | "downRight" | "downLeft">): Extract<MoveDirection, "upJump" | "downJump" | "leftJump" | "rightJump"> {

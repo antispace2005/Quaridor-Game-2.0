@@ -11,18 +11,21 @@ interface BoardProps {
 }
 
 export default function Board({ boardSize, manager }: BoardProps) {
-  const { gameState } = useGameState();
+  const { gameState, setGameState } = useGameState();
   const validMoves = manager.GetValidMoves(gameState);
   const gridSize = boardSize * 2 - 1;
   const cells: ReactNode[] = [];
 
   const currentPlayer = gameState.players[gameState.turn];
-  const validMoveTargets = new Set<string>();
+  const validMoveTargets = new Map<string, MoveDirection>();
 
   if (currentPlayer) {
     validMoves.validPlayerMoves.forEach((direction) => {
       const targetPosition = getMoveTarget(currentPlayer.position, direction);
-      validMoveTargets.add(`${targetPosition.x},${targetPosition.y}`);
+      validMoveTargets.set(
+        `${targetPosition.x},${targetPosition.y}`,
+        direction,
+      );
     });
   }
 
@@ -71,6 +74,21 @@ export default function Board({ boardSize, manager }: BoardProps) {
             position={{ x, y }}
             playerId={playerId}
             showMoveDot={showMoveDot}
+            onClick={
+              validMoveTargets.has(posKey)
+                ? () => {
+                    const direction = validMoveTargets.get(posKey);
+                    if (!direction) {
+                      return;
+                    }
+
+                    const result = manager.MovePlayer(gameState, direction);
+                    if (result.isSuccess) {
+                      setGameState(result.gameState);
+                    }
+                  }
+                : undefined
+            }
           />,
         );
         continue;
