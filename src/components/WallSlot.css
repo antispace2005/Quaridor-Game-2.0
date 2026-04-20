@@ -1,0 +1,14 @@
+.wall-slot {
+	box-sizing: border-box;
+	border: 1px dashed #7f7f7f;
+	background: rgba(140, 140, 140, 0.18);
+	pointer-events: none;
+}
+
+.wall-slot.horizontal {
+	height: 100%;
+}
+
+.wall-slot.vertical {
+	width: 100%;
+}

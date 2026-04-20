@@ -1,0 +1,14 @@
+.board {
+	--cell-size: 40px;
+	--pawn-color-0: #ff6b6b;
+	--pawn-color-1: #4ecdc4;
+	--pawn-color-2: #ffd93d;
+	--pawn-color-3: #6c5ce7;
+	--wall-color: #2d3436;
+	display: grid;
+	gap: 0;
+	width: fit-content;
+	margin: 24px auto;
+	border: 1px solid #a3a3a3;
+	background: #f2f2f2;
+}
