@@ -11,8 +11,6 @@ export default function Wall({ wallKey, wallPlayerId }: WallProps) {
       className="wall"
       data-wall-key={wallKey}
       data-wall-player-id={wallPlayerId}
-    >
-      wall
-    </div>
+    />
   );
 }

@@ -17,6 +17,13 @@ export default function Board({ boardSize, manager }: BoardProps) {
     { x: number; y: number } | undefined
   >(undefined);
   const gridSize = boardSize * 2 - 1;
+  const trackTemplate = useMemo(
+    () =>
+      Array.from({ length: gridSize }, (_, index) =>
+        index % 2 === 0 ? "var(--tile-size)" : "var(--wall-size)",
+      ).join(" "),
+    [gridSize],
+  );
   const cells: ReactNode[] = [];
 
   const validWallPlacementKeys = useMemo(
@@ -191,8 +198,8 @@ export default function Board({ boardSize, manager }: BoardProps) {
       <div
         className="board"
         style={{
-          gridTemplateColumns: `repeat(${gridSize}, var(--cell-size))`,
-          gridTemplateRows: `repeat(${gridSize}, var(--cell-size))`,
+          gridTemplateColumns: trackTemplate,
+          gridTemplateRows: trackTemplate,
         }}
       >
         {cells}
