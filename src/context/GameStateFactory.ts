@@ -5,21 +5,25 @@ export type FourPlayerTurn = "player1" | "player2" | "player3" | "player4";
 
 export function createTwoPlayerGameState(
   startingPlayer: TwoPlayerTurn,
+  boardSize = 9,
 ): GameState {
+  const center = boardSize - 1;
+  const edge = boardSize * 2 - 2;
+
   return {
     status: "in_progress",
     turn: startingPlayer,
-    boardSize: 9,
+    boardSize,
     players: {
       player1: {
-        position: { x: 8, y: 16 },
+        position: { x: center, y: edge },
         wallsRemaining: 10,
         goalRow: 0,
       },
       player2: {
-        position: { x: 8, y: 0 },
+        position: { x: center, y: 0 },
         wallsRemaining: 10,
-        goalRow: 16,
+        goalRow: edge,
       },
     },
     walls: [],
@@ -28,34 +32,38 @@ export function createTwoPlayerGameState(
 
 export function createFourPlayerGameState(
   startingPlayer: FourPlayerTurn,
+  boardSize = 9,
 ): GameState {
+  const center = boardSize - 1;
+  const edge = boardSize * 2 - 2;
+
   return {
     status: "in_progress",
     turn: startingPlayer,
-    boardSize: 9,
+    boardSize,
     players: {
       // Clockwise order: top -> right -> bottom -> left
       player1: {
-        position: { x: 8, y: 0 },
+        position: { x: center, y: 0 },
         wallsRemaining: 5,
-        goalRow: 16,
+        goalRow: edge,
       },
       player2: {
-        position: { x: 16, y: 8 },
+        position: { x: edge, y: center },
         wallsRemaining: 5,
         goalRow: 0,
         goalColumn: 0,
       },
       player3: {
-        position: { x: 8, y: 16 },
+        position: { x: center, y: edge },
         wallsRemaining: 5,
         goalRow: 0,
       },
       player4: {
-        position: { x: 0, y: 8 },
+        position: { x: 0, y: center },
         wallsRemaining: 5,
-        goalRow: 16,
-        goalColumn: 16,
+        goalRow: edge,
+        goalColumn: edge,
       },
     },
     walls: [],

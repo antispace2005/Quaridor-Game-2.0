@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import "./Board.css";
 import Tile from "./Tile";
 import WallSlot from "./WallSlot";
@@ -24,6 +30,10 @@ export default function Board({ boardSize, manager }: BoardProps) {
       ).join(" "),
     [gridSize],
   );
+  const responsiveTileSize = useMemo(() => {
+    const boardUnits = boardSize + (boardSize - 1) / 4;
+    return `clamp(18px, min(calc((100dvh - 150px) / ${boardUnits}), calc((100dvw - 36px) / ${boardUnits})), 56px)`;
+  }, [boardSize]);
   const cells: ReactNode[] = [];
 
   const validWallPlacementKeys = useMemo(
@@ -197,10 +207,13 @@ export default function Board({ boardSize, manager }: BoardProps) {
     <div className="board-section">
       <div
         className="board"
-        style={{
-          gridTemplateColumns: trackTemplate,
-          gridTemplateRows: trackTemplate,
-        }}
+        style={
+          {
+            "--tile-size": responsiveTileSize,
+            gridTemplateColumns: trackTemplate,
+            gridTemplateRows: trackTemplate,
+          } as CSSProperties
+        }
       >
         {cells}
       </div>

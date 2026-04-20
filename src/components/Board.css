@@ -9,7 +9,7 @@
 }
 
 .board {
-	--tile-size: clamp(24px, min(calc((100dvh - 140px) / 11), calc((100dvw - 40px) / 11)), 56px);
+	--tile-size: 56px;
 	--wall-size: calc(var(--tile-size) / 4);
 	--pawn-color-0: #ff6b6b;
 	--pawn-color-1: #4ecdc4;
@@ -27,15 +27,38 @@
 }
 
 .confirm-wall-button {
-	padding: 8px 12px;
-	border: 1px solid #222;
-	background: #fff;
-	color: #111;
+	min-width: 190px;
+	padding: 10px 14px;
+	border: 1px solid #1f1f1f;
+	border-radius: 10px;
+	background: linear-gradient(180deg, #2b2b2b 0%, #141414 100%);
+	color: #f7f2e8;
 	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 	cursor: pointer;
+	box-shadow: 0 6px 12px rgba(0, 0, 0, 0.22);
+	transition: transform 140ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.confirm-wall-button:hover:not(:disabled) {
+	transform: translateY(-1px);
+	filter: brightness(1.08);
+	box-shadow: 0 9px 16px rgba(0, 0, 0, 0.28);
+}
+
+.confirm-wall-button:active:not(:disabled) {
+	transform: translateY(0);
+	filter: brightness(0.96);
+	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .confirm-wall-button:disabled {
-	opacity: 0.45;
+	background: #8f8f8f;
+	border-color: #7f7f7f;
+	color: #ececec;
+	box-shadow: none;
+	opacity: 0.7;
 	cursor: not-allowed;
 }

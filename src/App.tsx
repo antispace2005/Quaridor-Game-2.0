@@ -19,15 +19,16 @@ function App() {
     mode: "1v1",
     type: "1v1",
     diff: "none",
+    boardSize: 9,
   });
 
   const initialState = useMemo<GameState>(() => {
     if (gameSetup.mode === "1v1v1v1") {
-      return createFourPlayerGameState("player1");
+      return createFourPlayerGameState("player1", gameSetup.boardSize);
     }
 
-    return createTwoPlayerGameState("player1");
-  }, [gameSetup.mode]);
+    return createTwoPlayerGameState("player1", gameSetup.boardSize);
+  }, [gameSetup.boardSize, gameSetup.mode]);
 
   const startGame = (nextSetup: GameSetup) => {
     setGameSetup(nextSetup);
@@ -58,7 +59,7 @@ function App() {
             diff: gameSetup.diff,
           }}
         >
-          <Board boardSize={9} manager={offlineGameManager} />
+          <Board boardSize={gameSetup.boardSize} manager={offlineGameManager} />
         </GameContainer>
       )}
     </div>

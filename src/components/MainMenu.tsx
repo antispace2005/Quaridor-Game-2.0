@@ -8,6 +8,7 @@ export interface GameSetup {
   mode: MenuMode;
   type: "1v1" | "1v1v1v1";
   diff: GameDiff;
+  boardSize: 7 | 9 | 11;
 }
 
 interface MainMenuProps {
@@ -27,6 +28,7 @@ export default function MainMenu({
 
   const updateMode = (mode: MenuMode) => {
     onSetupChange({
+      ...currentSetup,
       mode,
       type: mode === "1v1v1v1" ? "1v1v1v1" : "1v1",
       diff:
@@ -106,6 +108,27 @@ export default function MainMenu({
             </p>
           </section>
         )}
+
+        <section className="main-menu__section">
+          <h2>Board Size</h2>
+          <div className="main-menu__button-row compact">
+            {([7, 9, 11] as const).map((size) => (
+              <button
+                key={size}
+                type="button"
+                className={currentSetup.boardSize === size ? "selected" : ""}
+                onClick={() =>
+                  onSetupChange({
+                    ...currentSetup,
+                    boardSize: size,
+                  })
+                }
+              >
+                {size}x{size}
+              </button>
+            ))}
+          </div>
+        </section>
 
         <section className="main-menu__section main-menu__actions">
           <button

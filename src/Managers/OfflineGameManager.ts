@@ -18,6 +18,32 @@ interface FloodPathResult {
   exploredNodes: string[];
 }
 
+interface MinimaxTimingRun {
+  runId: number;
+  depth: number;
+  turn: PlayerKey;
+  totalMs: number;
+  nodeVisits: number;
+  leafEvaluations: number;
+  actionCount: number;
+  failedActions: number;
+  prunes: number;
+  evaluateMs: number;
+  candidateGenerationMs: number;
+  applyActionMs: number;
+  recursionMs: number;
+}
+
+interface MinimaxTimingStore {
+  runs: number;
+  totalMs: number;
+  lastRun: MinimaxTimingRun | null;
+  history: MinimaxTimingRun[];
+}
+
+const MINIMAX_TIMING_GLOBAL_KEY = "__quoridorMinimaxTiming";
+const MINIMAX_TIMING_HISTORY_LIMIT = 50;
+
 export class OfflineGameManager implements GameManager {
   GetValidMoves(gameState: GameState): ValidMoves {
     if (gameState.status !== "in_progress") {
@@ -27,13 +53,6 @@ export class OfflineGameManager implements GameManager {
       };
     }
 
-    const currentPlayerId = this.getPlayerIdFromTurn(gameState.turn);
-    if (currentPlayerId !== undefined) {
-      if (false) {
-        void this.floodShortestPath(gameState, currentPlayerId as 0 | 1 | 2 | 3);
-        void this.hasPathDepthFirstSearch(gameState, currentPlayerId as 0 | 1 | 2 | 3);
-      }
-    }
 
     return {
       validPlayerMoves: this.getValidPlayerMoves(gameState),
@@ -240,13 +259,14 @@ export class OfflineGameManager implements GameManager {
         isSuccess: false,
       };
     }
-
+    
     const gameStateAfterWall: GameState = {
       ...gameState,
       walls: [...gameState.walls, { ...position, playerId: currentPlayerId }],
     };
 
-    const allPlayersStillHavePath = this.getActivePlayerIds(gameStateAfterWall).every(
+    const shouldSkipPathCheck = currentPlayer.wallsRemaining < gameState.boardSize / 2;
+    const allPlayersStillHavePath = shouldSkipPathCheck || this.getActivePlayerIds(gameStateAfterWall).every(
       (playerId) => this.hasPathDepthFirstSearch(gameStateAfterWall, playerId),
     );
 
@@ -297,8 +317,34 @@ export class OfflineGameManager implements GameManager {
       };
     }
 
+    const startTimeMs = performance.now();
+
     const aiPlayerKey = gameState.turn as PlayerKey;
-    const searchResult = this.minimax(gameState, depth, -Infinity, Infinity, aiPlayerKey);
+    const timingRun: MinimaxTimingRun = {
+      runId: Date.now(),
+      depth,
+      turn: aiPlayerKey,
+      totalMs: 0,
+      nodeVisits: 0,
+      leafEvaluations: 0,
+      actionCount: 0,
+      failedActions: 0,
+      prunes: 0,
+      evaluateMs: 0,
+      candidateGenerationMs: 0,
+      applyActionMs: 0,
+      recursionMs: 0,
+    };
+
+    const searchResult = this.minimax(gameState, depth, -Infinity, Infinity, aiPlayerKey, timingRun);
+
+    const elapsedTimeMs = performance.now() - startTimeMs;
+    timingRun.totalMs = elapsedTimeMs;
+    this.saveAndLogMinimaxTiming(timingRun);
+
+    console.log(
+      `[Minimax] depth=${depth}, turn=${gameState.turn}, time=${elapsedTimeMs.toFixed(2)}ms`,
+    );
 
     if (!searchResult.moveResult) {
       return {
@@ -316,20 +362,50 @@ export class OfflineGameManager implements GameManager {
     alpha: number,
     beta: number,
     aiPlayerKey: PlayerKey,
+    timingRun?: MinimaxTimingRun,
   ): { score: number; moveResult: MoveResult | null } {
+    if (timingRun) {
+      timingRun.nodeVisits += 1;
+    }
+
     if (depth === 0 || gameState.status !== "in_progress") {
+      const evaluateStartMs = timingRun ? performance.now() : 0;
+      const score = this.evaluateGameState(gameState, aiPlayerKey);
+
+      if (timingRun) {
+        timingRun.leafEvaluations += 1;
+        timingRun.evaluateMs += performance.now() - evaluateStartMs;
+      }
+
       return {
-        score: this.evaluateGameState(gameState, aiPlayerKey),
+        score,
         moveResult: null,
       };
     }
 
+    const candidateStartMs = timingRun ? performance.now() : 0;
     const actions = this.getCandidateActions(gameState);
+    if (timingRun) {
+      timingRun.candidateGenerationMs += performance.now() - candidateStartMs;
+    }
+
     if (actions.length === 0) {
+      const evaluateStartMs = timingRun ? performance.now() : 0;
+      const score = this.evaluateGameState(gameState, aiPlayerKey);
+
+      if (timingRun) {
+        timingRun.leafEvaluations += 1;
+        timingRun.evaluateMs += performance.now() - evaluateStartMs;
+      }
+
       return {
-        score: this.evaluateGameState(gameState, aiPlayerKey),
+        score,
         moveResult: null,
       };
+    }
+
+    if (timingRun) {
+      timingRun.actionCount += actions.length;
     }
 
     const maximizing = gameState.turn === aiPlayerKey;
@@ -337,18 +413,32 @@ export class OfflineGameManager implements GameManager {
     let bestMoveResult: MoveResult | null = null;
 
     for (const action of actions) {
+      const applyStartMs = timingRun ? performance.now() : 0;
       const childResult = this.applyAction(gameState, action);
+      if (timingRun) {
+        timingRun.applyActionMs += performance.now() - applyStartMs;
+      }
+
       if (!childResult.isSuccess) {
+        if (timingRun) {
+          timingRun.failedActions += 1;
+        }
+
         continue;
       }
 
+      const recursionStartMs = timingRun ? performance.now() : 0;
       const searchResult = this.minimax(
         childResult.gameState,
         depth - 1,
         alpha,
         beta,
         aiPlayerKey,
+        timingRun,
       );
+      if (timingRun) {
+        timingRun.recursionMs += performance.now() - recursionStartMs;
+      }
 
       if (maximizing) {
         if (searchResult.score > bestScore) {
@@ -367,6 +457,10 @@ export class OfflineGameManager implements GameManager {
       }
 
       if (beta <= alpha) {
+        if (timingRun) {
+          timingRun.prunes += 1;
+        }
+
         break;
       }
     }
@@ -375,6 +469,49 @@ export class OfflineGameManager implements GameManager {
       score: bestScore,
       moveResult: bestMoveResult,
     };
+  }
+
+  private getMinimaxTimingStore(): MinimaxTimingStore {
+    type GlobalWithMinimaxTiming = typeof globalThis & {
+      [MINIMAX_TIMING_GLOBAL_KEY]?: MinimaxTimingStore;
+    };
+
+    const globalWithMinimaxTiming = globalThis as GlobalWithMinimaxTiming;
+
+    if (!globalWithMinimaxTiming[MINIMAX_TIMING_GLOBAL_KEY]) {
+      globalWithMinimaxTiming[MINIMAX_TIMING_GLOBAL_KEY] = {
+        runs: 0,
+        totalMs: 0,
+        lastRun: null,
+        history: [],
+      };
+    }
+
+    return globalWithMinimaxTiming[MINIMAX_TIMING_GLOBAL_KEY] as MinimaxTimingStore;
+  }
+
+  private saveAndLogMinimaxTiming(run: MinimaxTimingRun): void {
+    const store = this.getMinimaxTimingStore();
+
+    store.runs += 1;
+    store.totalMs += run.totalMs;
+    store.lastRun = run;
+    store.history.push(run);
+
+    if (store.history.length > MINIMAX_TIMING_HISTORY_LIMIT) {
+      store.history.shift();
+    }
+
+    const averageMs = store.totalMs / store.runs;
+
+    console.log("[Minimax timing run]", run);
+    console.log("[Minimax timing totals]", {
+      runs: store.runs,
+      totalMs: Number(store.totalMs.toFixed(2)),
+      averageMs: Number(averageMs.toFixed(2)),
+      historySize: store.history.length,
+      globalVariable: MINIMAX_TIMING_GLOBAL_KEY,
+    });
   }
 
   private getCandidateActions(gameState: GameState): Array<
@@ -413,7 +550,50 @@ export class OfflineGameManager implements GameManager {
       return this.MovePlayer(gameState, action.direction);
     }
 
-    return this.PlaceWall(gameState, action.position);
+    return this.applyWallWithoutValidation(gameState, action.position);
+  }
+
+  private applyWallWithoutValidation(
+    gameState: GameState,
+    position: WallPosition,
+  ): MoveResult {
+    if (gameState.status !== "in_progress") {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const currentPlayerKey = gameState.turn;
+    const currentPlayer = gameState.players[currentPlayerKey];
+    const currentPlayerId = this.getPlayerIdFromTurn(currentPlayerKey);
+
+    if (!currentPlayer || currentPlayerId === undefined || currentPlayer.wallsRemaining <= 0) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const gameStateAfterWall: GameState = {
+      ...gameState,
+      walls: [...gameState.walls, { ...position, playerId: currentPlayerId }],
+    };
+
+    return {
+      gameState: {
+        ...gameStateAfterWall,
+        turn: this.getNextTurn(gameStateAfterWall),
+        players: {
+          ...gameStateAfterWall.players,
+          [currentPlayerKey]: {
+            ...currentPlayer,
+            wallsRemaining: currentPlayer.wallsRemaining - 1,
+          },
+        },
+      },
+      isSuccess: true,
+    };
   }
 
   private getAIDepth(difficulty: AiDifficulty): number {
@@ -501,9 +681,16 @@ export class OfflineGameManager implements GameManager {
   }
 
   private getValidWallPlacements(gameState: GameState): WallPosition[] {
+    const validWallPlacements: WallPosition[] = [];
+
+    const currentPlayer = this.getCurrentPlayer(gameState);
+    const currentPlayerId = this.getPlayerIdFromTurn(gameState.turn);
+    if (!currentPlayer || currentPlayerId === undefined || currentPlayer.wallsRemaining === 0) {
+      return validWallPlacements;
+    }
+
     const wallFootprintSet = this.getWallFootprintSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
-    const validWallPlacements: WallPosition[] = [];
 
     for (let y = 0; y < gridLimit; y += 1) {
       for (let x = 0; x < gridLimit; x += 1) {
@@ -523,6 +710,19 @@ export class OfflineGameManager implements GameManager {
         }
 
         if (this.isWallPlacementOverlapping({ x, y }, wallFootprintSet)) {
+          continue;
+        }
+
+        const gameStateAfterCandidateWall: GameState = {
+          ...gameState,
+          walls: [...gameState.walls, { x, y, playerId: currentPlayerId }],
+        };
+
+        const allPlayersStillHavePath = this.getActivePlayerIds(gameStateAfterCandidateWall).every(
+          (playerId) => this.hasPathDepthFirstSearch(gameStateAfterCandidateWall, playerId),
+        );
+
+        if (!allPlayersStillHavePath) {
           continue;
         }
 
