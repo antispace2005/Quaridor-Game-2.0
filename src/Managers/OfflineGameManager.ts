@@ -48,7 +48,7 @@ export class OfflineGameManager implements GameManager {
     }
 
     const occupiedTiles = this.getOccupiedTiles(gameState, playerKey);
-    const wallSet = this.getWallSet(gameState);
+    const movementBlockSet = this.getMovementBlockSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
     const visited = new Set<string>([this.toKey(player.position.x, player.position.y)]);
     const exploredNodes: string[] = [];
@@ -77,7 +77,7 @@ export class OfflineGameManager implements GameManager {
       const nextMoves = this.getValidPlayerMovesFromPosition(
         currentNode.position,
         occupiedTiles,
-        wallSet,
+        movementBlockSet,
         gridLimit,
       );
 
@@ -114,7 +114,7 @@ export class OfflineGameManager implements GameManager {
     }
 
     const occupiedTiles = this.getOccupiedTiles(gameState, playerKey);
-    const wallSet = this.getWallSet(gameState);
+    const movementBlockSet = this.getMovementBlockSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
     const visited = new Set<string>();
 
@@ -133,7 +133,7 @@ export class OfflineGameManager implements GameManager {
       const nextMoves = this.getValidPlayerMovesFromPosition(
         position,
         occupiedTiles,
-        wallSet,
+        movementBlockSet,
         gridLimit,
       );
 
@@ -258,19 +258,19 @@ export class OfflineGameManager implements GameManager {
 
     const currentPosition = currentPlayer.position;
     const occupiedTiles = this.getOccupiedTiles(gameState, gameState.turn);
-    const wallSet = this.getWallSet(gameState);
+    const movementBlockSet = this.getMovementBlockSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
 
     return this.getValidPlayerMovesFromPosition(
       currentPosition,
       occupiedTiles,
-      wallSet,
+      movementBlockSet,
       gridLimit,
     );
   }
 
   private getValidWallPlacements(gameState: GameState): WallPosition[] {
-    const wallSet = this.getWallSet(gameState);
+    const wallFootprintSet = this.getWallFootprintSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
     const validWallPlacements: WallPosition[] = [];
 
@@ -291,7 +291,7 @@ export class OfflineGameManager implements GameManager {
           continue;
         }
 
-        if (wallSet.has(this.toKey(x, y))) {
+        if (this.isWallPlacementOverlapping({ x, y }, wallFootprintSet)) {
           continue;
         }
 
@@ -305,7 +305,7 @@ export class OfflineGameManager implements GameManager {
   private getValidPlayerMovesFromPosition(
     currentPosition: { x: number; y: number },
     occupiedTiles: Set<string>,
-    wallSet: Set<string>,
+    movementBlockSet: Set<string>,
     gridLimit: number,
   ): MoveDirection[] {
     const validMoves: MoveDirection[] = [];
@@ -314,7 +314,7 @@ export class OfflineGameManager implements GameManager {
       direction: "up",
       currentPosition,
       occupiedTiles,
-      wallSet,
+      movementBlockSet,
       gridLimit,
       validMoves,
     });
@@ -322,7 +322,7 @@ export class OfflineGameManager implements GameManager {
       direction: "down",
       currentPosition,
       occupiedTiles,
-      wallSet,
+      movementBlockSet,
       gridLimit,
       validMoves,
     });
@@ -330,7 +330,7 @@ export class OfflineGameManager implements GameManager {
       direction: "left",
       currentPosition,
       occupiedTiles,
-      wallSet,
+      movementBlockSet,
       gridLimit,
       validMoves,
     });
@@ -338,7 +338,7 @@ export class OfflineGameManager implements GameManager {
       direction: "right",
       currentPosition,
       occupiedTiles,
-      wallSet,
+      movementBlockSet,
       gridLimit,
       validMoves,
     });
@@ -350,14 +350,14 @@ export class OfflineGameManager implements GameManager {
     direction,
     currentPosition,
     occupiedTiles,
-    wallSet,
+    movementBlockSet,
     gridLimit,
     validMoves,
   }: {
     direction: Exclude<MoveDirection, "upJump" | "downJump" | "leftJump" | "rightJump" | "upRight" | "upLeft" | "downRight" | "downLeft">;
     currentPosition: { x: number; y: number };
     occupiedTiles: Set<string>;
-    wallSet: Set<string>;
+    movementBlockSet: Set<string>;
     gridLimit: number;
     validMoves: MoveDirection[];
   }) {
@@ -371,7 +371,7 @@ export class OfflineGameManager implements GameManager {
       y: currentPosition.y + moveDelta.moveY,
     };
 
-    if (!this.isInsideBoard(targetPosition, gridLimit) || wallSet.has(this.toKey(wallPosition.x, wallPosition.y))) {
+    if (!this.isInsideBoard(targetPosition, gridLimit) || movementBlockSet.has(this.toKey(wallPosition.x, wallPosition.y))) {
       return;
     }
 
@@ -392,7 +392,7 @@ export class OfflineGameManager implements GameManager {
 
     const jumpBlocked =
       !this.isInsideBoard(jumpPosition, gridLimit) ||
-      wallSet.has(this.toKey(jumpWallPosition.x, jumpWallPosition.y));
+      movementBlockSet.has(this.toKey(jumpWallPosition.x, jumpWallPosition.y));
 
     if (!jumpBlocked && !occupiedTiles.has(this.toKey(jumpPosition.x, jumpPosition.y))) {
       validMoves.push(this.toJumpDirection(direction));
@@ -403,7 +403,7 @@ export class OfflineGameManager implements GameManager {
       direction,
       currentPosition,
       occupiedTiles,
-      wallSet,
+      movementBlockSet,
       gridLimit,
       validMoves,
     });
@@ -413,14 +413,14 @@ export class OfflineGameManager implements GameManager {
     direction,
     currentPosition,
     occupiedTiles,
-    wallSet,
+    movementBlockSet,
     gridLimit,
     validMoves,
   }: {
     direction: Exclude<MoveDirection, "upJump" | "downJump" | "leftJump" | "rightJump" | "upRight" | "upLeft" | "downRight" | "downLeft">;
     currentPosition: { x: number; y: number };
     occupiedTiles: Set<string>;
-    wallSet: Set<string>;
+    movementBlockSet: Set<string>;
     gridLimit: number;
     validMoves: MoveDirection[];
   }) {
@@ -431,7 +431,7 @@ export class OfflineGameManager implements GameManager {
         return;
       }
 
-      if (wallSet.has(this.toKey(wallCheckPosition.x, wallCheckPosition.y))) {
+      if (movementBlockSet.has(this.toKey(wallCheckPosition.x, wallCheckPosition.y))) {
         return;
       }
 
@@ -624,14 +624,72 @@ export class OfflineGameManager implements GameManager {
     return occupiedTiles;
   }
 
-  private getWallSet(gameState: GameState): Set<string> {
-    const wallSet = new Set<string>();
+  private getMovementBlockSet(gameState: GameState): Set<string> {
+    const movementBlockSet = new Set<string>();
 
     gameState.walls.forEach((wall) => {
-      wallSet.add(this.toKey(wall.x, wall.y));
+      const blockedCells = this.getWallBlockedCells(wall);
+      blockedCells.forEach((cell) => {
+        movementBlockSet.add(this.toKey(cell.x, cell.y));
+      });
     });
 
-    return wallSet;
+    return movementBlockSet;
+  }
+
+  private getWallFootprintSet(gameState: GameState): Set<string> {
+    const wallFootprintSet = new Set<string>();
+
+    gameState.walls.forEach((wall) => {
+      const footprintCells = this.getWallFootprintCells(wall);
+      footprintCells.forEach((cell) => {
+        wallFootprintSet.add(this.toKey(cell.x, cell.y));
+      });
+    });
+
+    return wallFootprintSet;
+  }
+
+  private isWallPlacementOverlapping(
+    position: WallPosition,
+    wallFootprintSet: Set<string>,
+  ) {
+    const candidateFootprint = this.getWallFootprintCells(position);
+    return candidateFootprint.some((cell) => wallFootprintSet.has(this.toKey(cell.x, cell.y)));
+  }
+
+  private getWallFootprintCells(position: WallPosition) {
+    const isVertical = position.x % 2 === 1 && position.y % 2 === 0;
+
+    if (isVertical) {
+      return [
+        { x: position.x, y: position.y },
+        { x: position.x, y: position.y + 1 },
+        { x: position.x, y: position.y + 2 },
+      ];
+    }
+
+    return [
+      { x: position.x, y: position.y },
+      { x: position.x + 1, y: position.y },
+      { x: position.x + 2, y: position.y },
+    ];
+  }
+
+  private getWallBlockedCells(position: WallPosition) {
+    const isVertical = position.x % 2 === 1 && position.y % 2 === 0;
+
+    if (isVertical) {
+      return [
+        { x: position.x, y: position.y },
+        { x: position.x, y: position.y + 2 },
+      ];
+    }
+
+    return [
+      { x: position.x, y: position.y },
+      { x: position.x + 2, y: position.y },
+    ];
   }
 
   private isInsideBoard(position: { x: number; y: number }, gridLimit: number) {
