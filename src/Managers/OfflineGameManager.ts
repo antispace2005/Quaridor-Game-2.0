@@ -18,6 +18,13 @@ interface FloodPathResult {
   exploredNodes: string[];
 }
 
+interface TileLayout {
+  tilePositions: Array<{ x: number; y: number }>;
+  tileBits: bigint[];
+  singleBitToIndex: Map<bigint, number>;
+  tilesPerRow: number;
+}
+
 interface MinimaxTimingRun {
   runId: number;
   depth: number;
@@ -45,6 +52,8 @@ const MINIMAX_TIMING_GLOBAL_KEY = "__quoridorMinimaxTiming";
 const MINIMAX_TIMING_HISTORY_LIMIT = 50;
 
 export class OfflineGameManager implements GameManager {
+  private tileLayoutByGridLimit = new Map<number, TileLayout>();
+
   GetValidMoves(gameState: GameState): ValidMoves {
     if (gameState.status !== "in_progress") {
       return {
@@ -76,51 +85,82 @@ export class OfflineGameManager implements GameManager {
     const occupiedTiles = this.getOccupiedTiles(gameState, playerKey);
     const movementBlockSet = this.getMovementBlockSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
-    const visited = new Set<string>([this.toKey(player.position.x, player.position.y)]);
     const exploredNodes: string[] = [];
-    const queue: Array<{ position: { x: number; y: number }; moves: MoveDirection[] }> = [
-      { position: player.position, moves: [] },
-    ];
+    const { tilePositions, tileBits, singleBitToIndex, tilesPerRow } = this.getTileLayout(gridLimit);
 
-    while (queue.length > 0) {
-      const currentNode = queue.shift();
-      if (!currentNode) {
-        continue;
+    const startIndex = this.getTileIndexFromPosition(player.position, tilesPerRow);
+    if (startIndex === undefined) {
+      return {
+        found: false,
+        movesNeeded: 0,
+        moves: [],
+        exploredNodes,
+      };
+    }
+
+    const adjacencyMasks: Array<bigint | undefined> = new Array<bigint | undefined>(tilePositions.length);
+    let goalMask = 0n;
+
+    tilePositions.forEach((position, index) => {
+      if (this.hasPlayerReachedGoal(player, position)) {
+        goalMask |= tileBits[index];
+      }
+    });
+
+    const getAdjacencyMask = (nodeIndex: number): bigint => {
+      const cachedAdjacencyMask = adjacencyMasks[nodeIndex];
+      if (cachedAdjacencyMask !== undefined) {
+        return cachedAdjacencyMask;
       }
 
-      const currentKey = this.toKey(currentNode.position.x, currentNode.position.y);
-      exploredNodes.push(currentKey);
-
-      if (this.hasPlayerReachedGoal(player, currentNode.position)) {
-        return {
-          found: true,
-          movesNeeded: currentNode.moves.length,
-          moves: currentNode.moves,
-          exploredNodes,
-        };
-      }
-
+      const position = tilePositions[nodeIndex];
       const nextMoves = this.getValidPlayerMovesFromPosition(
-        currentNode.position,
+        position,
         occupiedTiles,
         movementBlockSet,
         gridLimit,
       );
 
+      let adjacencyMask = 0n;
       nextMoves.forEach((moveDirection) => {
-        const nextPosition = this.getNextPosition(currentNode.position, moveDirection);
-        const nextKey = this.toKey(nextPosition.x, nextPosition.y);
-
-        if (visited.has(nextKey)) {
-          return;
+        const nextPosition = this.getNextPosition(position, moveDirection);
+        const nextIndex = this.getTileIndexFromPosition(nextPosition, tilesPerRow);
+        if (nextIndex !== undefined) {
+          adjacencyMask |= tileBits[nextIndex];
         }
-
-        visited.add(nextKey);
-        queue.push({
-          position: nextPosition,
-          moves: [...currentNode.moves, moveDirection],
-        });
       });
+
+      adjacencyMasks[nodeIndex] = adjacencyMask;
+      return adjacencyMask;
+    };
+
+    let movesNeeded = 0;
+    let visitedMask = tileBits[startIndex];
+    let frontierMask = visitedMask;
+
+    while (frontierMask !== 0n) {
+      if ((frontierMask & goalMask) !== 0n) {
+        return {
+          found: true,
+          movesNeeded,
+          moves: [],
+          exploredNodes,
+        };
+      }
+
+      let nextFrontierMask = 0n;
+      this.forEachSetIndex(frontierMask, singleBitToIndex, (nodeIndex) => {
+        nextFrontierMask |= getAdjacencyMask(nodeIndex);
+      });
+
+      nextFrontierMask &= ~visitedMask;
+      if (nextFrontierMask === 0n) {
+        break;
+      }
+
+      visitedMask |= nextFrontierMask;
+      frontierMask = nextFrontierMask;
+      movesNeeded += 1;
     }
 
     return {
@@ -131,6 +171,73 @@ export class OfflineGameManager implements GameManager {
     };
   }
 
+  private getTileLayout(gridLimit: number): TileLayout {
+    const cachedLayout = this.tileLayoutByGridLimit.get(gridLimit);
+    if (cachedLayout) {
+      return cachedLayout;
+    }
+
+    const tilePositions: Array<{ x: number; y: number }> = [];
+    const tilesPerRow = (gridLimit + 1) / 2;
+
+    for (let y = 0; y < gridLimit; y += 2) {
+      for (let x = 0; x < gridLimit; x += 2) {
+        tilePositions.push({ x, y });
+      }
+    }
+
+    const tileBits = tilePositions.map((_, index) => 1n << BigInt(index));
+    const singleBitToIndex = new Map<bigint, number>();
+    tileBits.forEach((bit, index) => {
+      singleBitToIndex.set(bit, index);
+    });
+
+    const layout = {
+      tilePositions,
+      tileBits,
+      singleBitToIndex,
+      tilesPerRow,
+    };
+
+    this.tileLayoutByGridLimit.set(gridLimit, layout);
+    return layout;
+  }
+
+  private forEachSetIndex(
+    mask: bigint,
+    singleBitToIndex: Map<bigint, number>,
+    callback: (index: number) => void,
+  ) {
+    let remainingMask = mask;
+
+    while (remainingMask !== 0n) {
+      const leastSignificantBit = remainingMask & -remainingMask;
+      const nodeIndex = singleBitToIndex.get(leastSignificantBit);
+      if (nodeIndex !== undefined) {
+        callback(nodeIndex);
+      }
+
+      remainingMask ^= leastSignificantBit;
+    }
+  }
+
+
+  private getTileIndexFromPosition(
+    position: { x: number; y: number },
+    tilesPerRow: number,
+  ): number | undefined {
+    if (position.x % 2 !== 0 || position.y % 2 !== 0) {
+      return undefined;
+    }
+
+    const tileX = position.x / 2;
+    const tileY = position.y / 2;
+    if (tileX < 0 || tileY < 0 || tileX >= tilesPerRow || tileY >= tilesPerRow) {
+      return undefined;
+    }
+
+    return tileY * tilesPerRow + tileX;
+  }
   private hasPathDepthFirstSearch(gameState: GameState, playerId: 0 | 1 | 2 | 3): boolean {
     const playerKey = this.getPlayerKeyFromPlayerId(playerId);
     const player = playerKey ? gameState.players[playerKey] : undefined;
@@ -547,10 +654,45 @@ export class OfflineGameManager implements GameManager {
       | { kind: "wall"; position: WallPosition },
   ): MoveResult {
     if (action.kind === "move") {
-      return this.MovePlayer(gameState, action.direction);
+      return this.applyMoveWithoutValidation(gameState, action.direction);
     }
 
     return this.applyWallWithoutValidation(gameState, action.position);
+  }
+
+  private applyMoveWithoutValidation(
+    gameState: GameState,
+    direction: MoveDirection,
+  ): MoveResult {
+    const currentPlayerKey = gameState.turn;
+    const currentPlayer = gameState.players[currentPlayerKey];
+
+    if (!currentPlayer) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
+    const nextPosition = this.getNextPosition(currentPlayer.position, direction);
+    const hasWon = this.hasPlayerReachedGoal(currentPlayer, nextPosition);
+    const nextTurn = this.getNextTurn(gameState);
+
+    return {
+      gameState: {
+        ...gameState,
+        status: hasWon ? "finished" : gameState.status,
+        turn: hasWon ? currentPlayerKey : nextTurn,
+        players: {
+          ...gameState.players,
+          [currentPlayerKey]: {
+            ...currentPlayer,
+            position: nextPosition,
+          },
+        },
+      },
+      isSuccess: true,
+    };
   }
 
   private applyWallWithoutValidation(
