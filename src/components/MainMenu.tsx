@@ -15,14 +15,12 @@ interface MainMenuProps {
   currentSetup: GameSetup;
   onSetupChange: (setup: GameSetup) => void;
   onStartGame: (setup: GameSetup) => void;
-  onRestartGame: () => void;
 }
 
 export default function MainMenu({
   currentSetup,
   onSetupChange,
   onStartGame,
-  onRestartGame,
 }: MainMenuProps) {
   const isAiMode = currentSetup.mode === "1v1ai";
 
@@ -137,9 +135,6 @@ export default function MainMenu({
             onClick={() => onStartGame(currentSetup)}
           >
             Start Game
-          </button>
-          <button type="button" onClick={onRestartGame}>
-            Restart Game
           </button>
         </section>
 

@@ -25,39 +25,10 @@ interface TileLayout {
   tilesPerRow: number;
 }
 
-interface MinimaxTimingRun {
-  runId: number;
-  depth: number;
-  turn: PlayerKey;
-  totalMs: number;
-  nodeVisits: number;
-  leafEvaluations: number;
-  actionCount: number;
-  failedActions: number;
-  prunes: number;
-  evaluateMs: number;
-  shortestPathMs: number;
-  shortestPathCalls: number;
-  candidateGenerationMs: number;
-  applyActionMs: number;
-  recursionMs: number;
-}
-
-interface MinimaxTimingStore {
-  runs: number;
-  totalMs: number;
-  lastRun: MinimaxTimingRun | null;
-  history: MinimaxTimingRun[];
-}
-
-const MINIMAX_TIMING_GLOBAL_KEY = "__quoridorMinimaxTiming";
-const MINIMAX_TIMING_HISTORY_LIMIT = 50;
-
 export class OfflineGameManager implements GameManager {
   private tileLayoutByGridLimit = new Map<number, TileLayout>();
   private aiPlayerKey: PlayerKey | null = null;
   private aiPlayerId: 0 | 1 | 2 | 3 | null = null;
-  private activeTimingRun: MinimaxTimingRun | null = null;
 
   GetValidMoves(gameState: GameState): ValidMoves {
     if (gameState.status !== "in_progress") {
@@ -682,8 +653,6 @@ export class OfflineGameManager implements GameManager {
       };
     }
 
-    const startTimeMs = performance.now();
-
     this.aiPlayerKey = gameState.turn as PlayerKey;
     this.aiPlayerId = this.getPlayerIdFromPlayerKey(this.aiPlayerKey) ?? null;
 
@@ -693,41 +662,7 @@ export class OfflineGameManager implements GameManager {
         isSuccess: false,
       };
     }
-
-    const timingRun: MinimaxTimingRun = {
-      runId: Date.now(),
-      depth,
-      turn: this.aiPlayerKey,
-      totalMs: 0,
-      nodeVisits: 0,
-      leafEvaluations: 0,
-      actionCount: 0,
-      failedActions: 0,
-      prunes: 0,
-      evaluateMs: 0,
-      shortestPathMs: 0,
-      shortestPathCalls: 0,
-      candidateGenerationMs: 0,
-      applyActionMs: 0,
-      recursionMs: 0,
-    };
-
-    const searchResult = (() => {
-      this.activeTimingRun = timingRun;
-      try {
-        return this.minimax(gameState, depth, -Infinity, Infinity, timingRun);
-      } finally {
-        this.activeTimingRun = null;
-      }
-    })();
-
-    const elapsedTimeMs = performance.now() - startTimeMs;
-    timingRun.totalMs = elapsedTimeMs;
-    this.saveAndLogMinimaxTiming(timingRun);
-
-    console.log(
-      `[Minimax] depth=${depth}, turn=${gameState.turn}, time=${elapsedTimeMs.toFixed(2)}ms`,
-    );
+    const searchResult = this.minimax(gameState, depth, -Infinity, Infinity);
 
     if (!searchResult.moveResult) {
       return {
@@ -744,7 +679,6 @@ export class OfflineGameManager implements GameManager {
     depth: number,
     alpha: number,
     beta: number,
-    timingRun?: MinimaxTimingRun,
   ): { score: number; moveResult: MoveResult | null } {
     if (!this.aiPlayerKey || this.aiPlayerId === null) {
       return {
@@ -753,18 +687,8 @@ export class OfflineGameManager implements GameManager {
       };
     }
 
-    if (timingRun) {
-      timingRun.nodeVisits += 1;
-    }
-
     if (depth === 0 || gameState.status !== "in_progress") {
-      const evaluateStartMs = timingRun ? performance.now() : 0;
       const score = this.evaluateGameState(gameState);
-
-      if (timingRun) {
-        timingRun.leafEvaluations += 1;
-        timingRun.evaluateMs += performance.now() - evaluateStartMs;
-      }
 
       return {
         score,
@@ -772,29 +696,15 @@ export class OfflineGameManager implements GameManager {
       };
     }
 
-    const candidateStartMs = timingRun ? performance.now() : 0;
     const actions = this.getCandidateActions(gameState);
-    if (timingRun) {
-      timingRun.candidateGenerationMs += performance.now() - candidateStartMs;
-    }
 
     if (actions.length === 0) {
-      const evaluateStartMs = timingRun ? performance.now() : 0;
       const score = this.evaluateGameState(gameState);
-
-      if (timingRun) {
-        timingRun.leafEvaluations += 1;
-        timingRun.evaluateMs += performance.now() - evaluateStartMs;
-      }
 
       return {
         score,
         moveResult: null,
       };
-    }
-
-    if (timingRun) {
-      timingRun.actionCount += actions.length;
     }
 
     const maximizing = gameState.turn === this.aiPlayerKey;
@@ -802,31 +712,18 @@ export class OfflineGameManager implements GameManager {
     let bestMoveResult: MoveResult | null = null;
 
     for (const action of actions) {
-      const applyStartMs = timingRun ? performance.now() : 0;
       const childResult = this.applyAction(gameState, action);
-      if (timingRun) {
-        timingRun.applyActionMs += performance.now() - applyStartMs;
-      }
 
       if (!childResult.isSuccess) {
-        if (timingRun) {
-          timingRun.failedActions += 1;
-        }
-
         continue;
       }
 
-      const recursionStartMs = timingRun ? performance.now() : 0;
       const searchResult = this.minimax(
         childResult.gameState,
         depth - 1,
         alpha,
         beta,
-        timingRun,
       );
-      if (timingRun) {
-        timingRun.recursionMs += performance.now() - recursionStartMs;
-      }
 
       if (maximizing) {
         if (searchResult.score > bestScore || !bestMoveResult) {
@@ -845,10 +742,6 @@ export class OfflineGameManager implements GameManager {
       }
 
       if (beta <= alpha) {
-        if (timingRun) {
-          timingRun.prunes += 1;
-        }
-
         break;
       }
     }
@@ -857,55 +750,6 @@ export class OfflineGameManager implements GameManager {
       score: bestScore,
       moveResult: bestMoveResult,
     };
-  }
-
-  private getMinimaxTimingStore(): MinimaxTimingStore {
-    type GlobalWithMinimaxTiming = typeof globalThis & {
-      [MINIMAX_TIMING_GLOBAL_KEY]?: MinimaxTimingStore;
-    };
-
-    const globalWithMinimaxTiming = globalThis as GlobalWithMinimaxTiming;
-
-    if (!globalWithMinimaxTiming[MINIMAX_TIMING_GLOBAL_KEY]) {
-      globalWithMinimaxTiming[MINIMAX_TIMING_GLOBAL_KEY] = {
-        runs: 0,
-        totalMs: 0,
-        lastRun: null,
-        history: [],
-      };
-    }
-
-    return globalWithMinimaxTiming[MINIMAX_TIMING_GLOBAL_KEY] as MinimaxTimingStore;
-  }
-
-  private saveAndLogMinimaxTiming(run: MinimaxTimingRun): void {
-    const store = this.getMinimaxTimingStore();
-
-    store.runs += 1;
-    store.totalMs += run.totalMs;
-    store.lastRun = run;
-    store.history.push(run);
-
-    if (store.history.length > MINIMAX_TIMING_HISTORY_LIMIT) {
-      store.history.shift();
-    }
-
-    const averageMs = store.totalMs / store.runs;
-    const averageShortestPathMs = run.shortestPathCalls > 0
-      ? run.shortestPathMs / run.shortestPathCalls
-      : 0;
-
-    console.log("[Minimax timing run]", run);
-    console.log("[Minimax timing totals]", {
-      runs: store.runs,
-      totalMs: Number(store.totalMs.toFixed(2)),
-      averageMs: Number(averageMs.toFixed(2)),
-      shortestPathMs: Number(run.shortestPathMs.toFixed(2)),
-      shortestPathCalls: run.shortestPathCalls,
-      shortestPathAvgMs: Number(averageShortestPathMs.toFixed(4)),
-      historySize: store.history.length,
-      globalVariable: MINIMAX_TIMING_GLOBAL_KEY,
-    });
   }
 
   private getCandidateActions(gameState: GameState): Array<
@@ -1076,13 +920,7 @@ export class OfflineGameManager implements GameManager {
   }
 
   private getShortestPathMovesNeeded(gameState: GameState, playerId: 0 | 1 | 2 | 3): number {
-    const shortestPathStartMs = this.activeTimingRun ? performance.now() : 0;
     const result = this.floodShortestPath(gameState, playerId);
-
-    if (this.activeTimingRun) {
-      this.activeTimingRun.shortestPathCalls += 1;
-      this.activeTimingRun.shortestPathMs += performance.now() - shortestPathStartMs;
-    }
 
     return result.found ? result.movesNeeded : Number.POSITIVE_INFINITY;
   }

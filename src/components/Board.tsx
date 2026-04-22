@@ -15,11 +15,20 @@ import { MinimaxWorkerClient } from "../Managers/MinimaxWorkerClient";
 interface BoardProps {
   boardSize: number;
   manager: GameManager;
+  onRestartGame: () => void;
+  onExitGame: () => void;
 }
 
-export default function Board({ boardSize, manager }: BoardProps) {
+export default function Board({
+  boardSize,
+  manager,
+  onRestartGame,
+  onExitGame,
+}: BoardProps) {
   const { gameState, setGameState, controls } = useGameState();
   const minimaxWorkerClient = useMemo(() => new MinimaxWorkerClient(), []);
+  const [isPauseMenuOpen, setIsPauseMenuOpen] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
   const playerSideInfo = useMemo(() => {
     const allPlayers = [
       {
@@ -122,21 +131,20 @@ export default function Board({ boardSize, manager }: BoardProps) {
   useEffect(() => {
     const shouldAutoPlayAiTurn = isAiAutoTurn;
 
-    if (!shouldAutoPlayAiTurn) {
+    if (!shouldAutoPlayAiTurn || isPauseMenuOpen) {
+      setIsAiThinking(false);
       return;
     }
 
     let isCancelled = false;
-    const aiTurnStartMs = performance.now();
 
     const runBackgroundMinimax = async () => {
       if (controls.diff === "none" || controls.diff === "online") {
         return;
       }
 
+      setIsAiThinking(true);
       let aiResult;
-      let usedFallback = false;
-      let fallbackReason = "";
       try {
         aiResult = await minimaxWorkerClient.getAIMove(
           gameState,
@@ -144,9 +152,7 @@ export default function Board({ boardSize, manager }: BoardProps) {
         );
       } catch (error) {
         // Fallback keeps gameplay working if worker crashes/times out.
-        usedFallback = true;
-        fallbackReason =
-          error instanceof Error ? error.message : "unknown worker error";
+        void error;
         aiResult =
           controls.diff === "easy"
             ? manager.GetAIMoveEasy(gameState)
@@ -158,34 +164,29 @@ export default function Board({ boardSize, manager }: BoardProps) {
       }
 
       if (isCancelled || !aiResult.isSuccess) {
+        if (!isCancelled) {
+          setIsAiThinking(false);
+        }
         return;
       }
 
       setGameState(aiResult.gameState);
       setSelectedWallPosition(undefined);
-
-      const aiTurnElapsedMs = performance.now() - aiTurnStartMs;
-      if (usedFallback) {
-        console.log(
-          `[AI turn latency] ${aiTurnElapsedMs.toFixed(2)}ms (fallback: ${fallbackReason})`,
-        );
-      } else {
-        console.log(
-          `[AI turn latency] ${aiTurnElapsedMs.toFixed(2)}ms (worker)`,
-        );
-      }
+      setIsAiThinking(false);
     };
 
     void runBackgroundMinimax();
 
     return () => {
       isCancelled = true;
+      setIsAiThinking(false);
     };
   }, [
     controls.diff,
     controls.type,
     gameState,
     isAiAutoTurn,
+    isPauseMenuOpen,
     minimaxWorkerClient,
     setGameState,
   ]);
@@ -309,6 +310,16 @@ export default function Board({ boardSize, manager }: BoardProps) {
 
   return (
     <div className="board-section">
+      <div className="board-topbar">
+        <button
+          type="button"
+          className="pause-button"
+          onClick={() => setIsPauseMenuOpen(true)}
+        >
+          Pause
+        </button>
+      </div>
+
       <div className="board-and-walls">
         <aside className="walls-panel walls-panel-left">
           {playerSideInfo.left.map((player) => (
@@ -354,7 +365,7 @@ export default function Board({ boardSize, manager }: BoardProps) {
 
       <button
         className="confirm-wall-button"
-        disabled={!selectedWallPosition}
+        disabled={!selectedWallPosition || isAiThinking}
         onClick={() => {
           if (!selectedWallPosition) {
             return;
@@ -374,6 +385,64 @@ export default function Board({ boardSize, manager }: BoardProps) {
       >
         Confirm Wall Placement
       </button>
+
+      {isAiThinking && !isPauseMenuOpen ? (
+        <div
+          className="thinking-overlay"
+          aria-live="polite"
+          aria-label="AI is thinking"
+        >
+          <div className="thinking-popup">
+            <span className="thinking-dot" />
+            <span>AI is thinking...</span>
+          </div>
+        </div>
+      ) : null}
+
+      {isPauseMenuOpen ? (
+        <div
+          className="pause-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pause menu"
+        >
+          <div
+            className="pause-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="pause-modal-title">Game Paused</h2>
+            <div className="pause-modal-actions">
+              <button
+                type="button"
+                className="pause-action"
+                onClick={() => {
+                  setIsPauseMenuOpen(false);
+                  onRestartGame();
+                }}
+              >
+                Restart
+              </button>
+              <button
+                type="button"
+                className="pause-action"
+                onClick={() => setIsPauseMenuOpen(false)}
+              >
+                Resume
+              </button>
+              <button
+                type="button"
+                className="pause-action pause-action-exit"
+                onClick={() => {
+                  setIsPauseMenuOpen(false);
+                  onExitGame();
+                }}
+              >
+                Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
