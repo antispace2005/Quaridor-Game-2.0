@@ -166,6 +166,43 @@
 	cursor: not-allowed;
 }
 
+.undo-button {
+	min-width: 190px;
+	padding: 10px 14px;
+	border: 1px solid #2e2e2e;
+	border-radius: 10px;
+	background: linear-gradient(180deg, #f2f2f2 0%, #dbdbdb 100%);
+	color: #1a1a1a;
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	cursor: pointer;
+	box-shadow: 0 6px 12px rgba(0, 0, 0, 0.16);
+	transition: transform 140ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.undo-button:hover:not(:disabled) {
+	transform: translateY(-1px);
+	filter: brightness(1.03);
+	box-shadow: 0 9px 16px rgba(0, 0, 0, 0.22);
+}
+
+.undo-button:active:not(:disabled) {
+	transform: translateY(0);
+	filter: brightness(0.98);
+	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.18);
+}
+
+.undo-button:disabled {
+	background: #c3c3c3;
+	border-color: #9f9f9f;
+	color: #666;
+	box-shadow: none;
+	opacity: 0.75;
+	cursor: not-allowed;
+}
+
 .pause-overlay {
 	position: fixed;
 	inset: 0;

@@ -8,8 +8,9 @@ import {
 import "./Board.css";
 import Tile from "./Tile";
 import WallSlot from "./WallSlot";
-import { useGameState } from "../context/GameContext";
+import { useGameState, type GameState } from "../context/GameContext";
 import type { GameManager, MoveDirection } from "../Managers/GameManager";
+import { OfflineGameManager } from "../Managers/OfflineGameManager";
 import { MinimaxWorkerClient } from "../Managers/MinimaxWorkerClient";
 
 interface BoardProps {
@@ -26,9 +27,11 @@ export default function Board({
   onExitGame,
 }: BoardProps) {
   const { gameState, setGameState, controls } = useGameState();
+  const isOfflineManager = manager instanceof OfflineGameManager;
   const minimaxWorkerClient = useMemo(() => new MinimaxWorkerClient(), []);
   const [isPauseMenuOpen, setIsPauseMenuOpen] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [PastState, SetPastState] = useState([] as GameState[]);
   const playerSideInfo = useMemo(() => {
     const allPlayers = [
       {
@@ -248,6 +251,9 @@ export default function Board({
 
                     const result = manager.MovePlayer(gameState, direction);
                     if (result.isSuccess) {
+                      if (isOfflineManager) {
+                        SetPastState([...PastState, gameState]);
+                      }
                       setGameState(result.gameState);
                       setSelectedWallPosition(undefined);
                     }
@@ -380,6 +386,9 @@ export default function Board({
           if (!placementResult.isSuccess) {
             return;
           }
+          if (isOfflineManager) {
+            SetPastState([...PastState, gameState]);
+          }
 
           setGameState(placementResult.gameState);
           setSelectedWallPosition(undefined);
@@ -387,7 +396,26 @@ export default function Board({
       >
         Confirm Wall Placement
       </button>
+      {isOfflineManager ? (
+        <button
+          className="undo-button"
+          disabled={PastState.length === 0 || isAiThinking}
+          onClick={() => {
+            if (PastState.length === 0) {
+              return;
+            }
 
+            const previousState = PastState[PastState.length - 1];
+            const updatedHistory = PastState.slice(0, -1);
+
+            setGameState(previousState);
+            SetPastState(updatedHistory);
+            setSelectedWallPosition(undefined);
+          }}
+        >
+          Undo Move
+        </button>
+      ) : null}
       {isAiThinking && !isPauseMenuOpen ? (
         <div
           className="thinking-overlay"
