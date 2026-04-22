@@ -372,41 +372,173 @@ export class OfflineGameManager implements GameManager {
       return false;
     }
 
-    const occupiedTiles = this.getOccupiedTiles(gameState, playerKey);
-    const movementBlockSet = this.getMovementBlockSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
-    const visited = new Set<string>();
+    const gridSize = gridLimit * gridLimit;
+    const occupiedGrid = new Uint8Array(gridSize);
+    const blockedGrid = new Uint8Array(gridSize);
 
-    const search = (position: { x: number; y: number }): boolean => {
-      const positionKey = this.toKey(position.x, position.y);
-      if (visited.has(positionKey)) {
-        return false;
+    PLAYER_ORDER.forEach((otherPlayerKey) => {
+      if (otherPlayerKey === playerKey) {
+        return;
       }
 
-      visited.add(positionKey);
+      const otherPlayer = gameState.players[otherPlayerKey];
+      if (!otherPlayer) {
+        return;
+      }
+
+      occupiedGrid[otherPlayer.position.y * gridLimit + otherPlayer.position.x] = 1;
+    });
+
+    gameState.walls.forEach((wall) => {
+      const blockedCells = this.getWallBlockedCells(wall);
+      blockedCells.forEach((cell) => {
+        blockedGrid[cell.y * gridLimit + cell.x] = 1;
+      });
+    });
+
+    return this.hasPathDepthFirstSearchWithGrids(player, occupiedGrid, blockedGrid, gridLimit, gridSize);
+  }
+
+  private hasPathDepthFirstSearchWithGrids(
+    player: NonNullable<GameState["players"][PlayerKey]>,
+    occupiedGrid: Uint8Array,
+    blockedGrid: Uint8Array,
+    gridLimit: number,
+    gridSize: number,
+  ): boolean {
+    const visitedGrid = new Uint8Array(gridSize);
+
+    const isTileInside = (x: number, y: number) => (
+      x >= 0 && y >= 0 && x < gridLimit && y < gridLimit
+    );
+    const isOccupied = (x: number, y: number) => occupiedGrid[y * gridLimit + x] === 1;
+    const isBlocked = (x: number, y: number) => blockedGrid[y * gridLimit + x] === 1;
+
+    const stack: Array<{ x: number; y: number }> = [player.position];
+
+    const tryPushDirectionMoves = (
+      position: { x: number; y: number },
+      moveX: number,
+      moveY: number,
+      wallX: number,
+      wallY: number,
+      diagonalA: { landingX: number; landingY: number; wallCheckX: number; wallCheckY: number },
+      diagonalB: { landingX: number; landingY: number; wallCheckX: number; wallCheckY: number },
+    ) => {
+      const targetX = position.x + moveX;
+      const targetY = position.y + moveY;
+      const wallPosX = position.x + wallX;
+      const wallPosY = position.y + wallY;
+
+      if (!isTileInside(targetX, targetY) || isBlocked(wallPosX, wallPosY)) {
+        return;
+      }
+
+      if (!isOccupied(targetX, targetY)) {
+        stack.push({ x: targetX, y: targetY });
+        return;
+      }
+
+      const jumpX = position.x + moveX * 2;
+      const jumpY = position.y + moveY * 2;
+      const jumpWallX = targetX + wallX;
+      const jumpWallY = targetY + wallY;
+
+      const jumpBlocked =
+        !isTileInside(jumpX, jumpY) ||
+        isBlocked(jumpWallX, jumpWallY);
+
+      if (!jumpBlocked && !isOccupied(jumpX, jumpY)) {
+        stack.push({ x: jumpX, y: jumpY });
+        return;
+      }
+
+      const diagAX = position.x + diagonalA.landingX;
+      const diagAY = position.y + diagonalA.landingY;
+      const diagAWallX = position.x + diagonalA.wallCheckX;
+      const diagAWallY = position.y + diagonalA.wallCheckY;
+      if (
+        isTileInside(diagAX, diagAY) &&
+        !isBlocked(diagAWallX, diagAWallY) &&
+        !isOccupied(diagAX, diagAY)
+      ) {
+        stack.push({ x: diagAX, y: diagAY });
+      }
+
+      const diagBX = position.x + diagonalB.landingX;
+      const diagBY = position.y + diagonalB.landingY;
+      const diagBWallX = position.x + diagonalB.wallCheckX;
+      const diagBWallY = position.y + diagonalB.wallCheckY;
+      if (
+        isTileInside(diagBX, diagBY) &&
+        !isBlocked(diagBWallX, diagBWallY) &&
+        !isOccupied(diagBX, diagBY)
+      ) {
+        stack.push({ x: diagBX, y: diagBY });
+      }
+    };
+
+    while (stack.length > 0) {
+      const position = stack.pop();
+      if (!position) {
+        break;
+      }
+
+      const index = position.y * gridLimit + position.x;
+      if (visitedGrid[index] === 1) {
+        continue;
+      }
+
+      visitedGrid[index] = 1;
 
       if (this.hasPlayerReachedGoal(player, position)) {
         return true;
       }
 
-      const nextMoves = this.getValidPlayerMovesFromPosition(
+      // up
+      tryPushDirectionMoves(
         position,
-        occupiedTiles,
-        movementBlockSet,
-        gridLimit,
+        0,
+        -2,
+        0,
+        -1,
+        { landingX: -2, landingY: -2, wallCheckX: -1, wallCheckY: -2 },
+        { landingX: 2, landingY: -2, wallCheckX: 1, wallCheckY: -2 },
       );
+      // down
+      tryPushDirectionMoves(
+        position,
+        0,
+        2,
+        0,
+        1,
+        { landingX: -2, landingY: 2, wallCheckX: -1, wallCheckY: 2 },
+        { landingX: 2, landingY: 2, wallCheckX: 1, wallCheckY: 2 },
+      );
+      // left
+      tryPushDirectionMoves(
+        position,
+        -2,
+        0,
+        -1,
+        0,
+        { landingX: -2, landingY: -2, wallCheckX: -2, wallCheckY: -1 },
+        { landingX: -2, landingY: 2, wallCheckX: -2, wallCheckY: 1 },
+      );
+      // right
+      tryPushDirectionMoves(
+        position,
+        2,
+        0,
+        1,
+        0,
+        { landingX: 2, landingY: -2, wallCheckX: 2, wallCheckY: -1 },
+        { landingX: 2, landingY: 2, wallCheckX: 2, wallCheckY: 1 },
+      );
+    }
 
-      for (const moveDirection of nextMoves) {
-        const nextPosition = this.getNextPosition(position, moveDirection);
-        if (search(nextPosition)) {
-          return true;
-        }
-      }
-
-      return false;
-    };
-
-    return search(player.position);
+    return false;
   }
 
   MovePlayer(gameState: GameState, direction: MoveDirection): MoveResult {
@@ -994,6 +1126,39 @@ export class OfflineGameManager implements GameManager {
 
     const wallFootprintSet = this.getWallFootprintSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
+    const gridSize = gridLimit * gridLimit;
+    const activePlayerIds = this.getActivePlayerIds(gameState);
+
+    const allPlayersOccupiedGrid = new Uint8Array(gridSize);
+    PLAYER_ORDER.forEach((playerKey) => {
+      const player = gameState.players[playerKey];
+      if (!player) {
+        return;
+      }
+
+      allPlayersOccupiedGrid[player.position.y * gridLimit + player.position.x] = 1;
+    });
+
+    const occupiedGridByPlayerId = new Map<0 | 1 | 2 | 3, Uint8Array>();
+    activePlayerIds.forEach((playerId) => {
+      const playerKey = this.getPlayerKeyFromPlayerId(playerId);
+      const player = playerKey ? gameState.players[playerKey] : undefined;
+      if (!player) {
+        return;
+      }
+
+      const occupiedGrid = allPlayersOccupiedGrid.slice();
+      occupiedGrid[player.position.y * gridLimit + player.position.x] = 0;
+      occupiedGridByPlayerId.set(playerId, occupiedGrid);
+    });
+
+    const blockedGrid = new Uint8Array(gridSize);
+    gameState.walls.forEach((wall) => {
+      const blockedCells = this.getWallBlockedCells(wall);
+      blockedCells.forEach((cell) => {
+        blockedGrid[cell.y * gridLimit + cell.x] = 1;
+      });
+    });
 
     for (let y = 0; y < gridLimit; y += 1) {
       for (let x = 0; x < gridLimit; x += 1) {
@@ -1016,14 +1181,28 @@ export class OfflineGameManager implements GameManager {
           continue;
         }
 
-        const gameStateAfterCandidateWall: GameState = {
-          ...gameState,
-          walls: [...gameState.walls, { x, y, playerId: currentPlayerId }],
-        };
+        const candidateBlockedCells = this.getWallBlockedCells({ x, y });
+        const previousBlockValues: number[] = [];
+        candidateBlockedCells.forEach((cell) => {
+          const index = cell.y * gridLimit + cell.x;
+          previousBlockValues.push(blockedGrid[index]);
+          blockedGrid[index] = 1;
+        });
 
-        const allPlayersStillHavePath = this.getActivePlayerIds(gameStateAfterCandidateWall).every(
-          (playerId) => this.hasPathDepthFirstSearch(gameStateAfterCandidateWall, playerId),
-        );
+        const allPlayersStillHavePath = activePlayerIds.every((playerId) => {
+          const playerKey = this.getPlayerKeyFromPlayerId(playerId);
+          const player = playerKey ? gameState.players[playerKey] : undefined;
+          const occupiedGrid = occupiedGridByPlayerId.get(playerId);
+          if (!player || !occupiedGrid) {
+            return false;
+          }
+
+          return this.hasPathDepthFirstSearchWithGrids(player, occupiedGrid, blockedGrid, gridLimit, gridSize);
+        });
+
+        candidateBlockedCells.forEach((cell, index) => {
+          blockedGrid[cell.y * gridLimit + cell.x] = previousBlockValues[index] ?? 0;
+        });
 
         if (!allPlayersStillHavePath) {
           continue;
