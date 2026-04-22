@@ -10,6 +10,7 @@ import Tile from "./Tile";
 import WallSlot from "./WallSlot";
 import { useGameState } from "../context/GameContext";
 import type { GameManager, MoveDirection } from "../Managers/GameManager";
+import { MinimaxWorkerClient } from "../Managers/MinimaxWorkerClient";
 
 interface BoardProps {
   boardSize: number;
@@ -18,7 +19,60 @@ interface BoardProps {
 
 export default function Board({ boardSize, manager }: BoardProps) {
   const { gameState, setGameState, controls } = useGameState();
-  const validMoves = manager.GetValidMoves(gameState);
+  const minimaxWorkerClient = useMemo(() => new MinimaxWorkerClient(), []);
+  const playerSideInfo = useMemo(() => {
+    const allPlayers = [
+      {
+        key: "player1",
+        label: "Player 1",
+        side: "left",
+        colorClass: "player-0",
+      },
+      {
+        key: "player2",
+        label: "Player 2",
+        side: "right",
+        colorClass: "player-1",
+      },
+      {
+        key: "player3",
+        label: "Player 3",
+        side: "left",
+        colorClass: "player-2",
+      },
+      {
+        key: "player4",
+        label: "Player 4",
+        side: "right",
+        colorClass: "player-3",
+      },
+    ] as const;
+
+    const visiblePlayers = allPlayers
+      .map((player) => ({
+        ...player,
+        state: gameState.players[player.key],
+      }))
+      .filter((player) => player.state);
+
+    return {
+      left: visiblePlayers.filter((player) => player.side === "left"),
+      right: visiblePlayers.filter((player) => player.side === "right"),
+    };
+  }, [gameState.players]);
+  const isAiAutoTurn =
+    controls.type === "1v1" &&
+    controls.diff !== "none" &&
+    controls.diff !== "online" &&
+    gameState.status === "in_progress" &&
+    gameState.turn === "player2";
+  const validMoves = useMemo(
+    () =>
+      isAiAutoTurn
+        ? { validPlayerMoves: [], validWallPlacements: [] }
+        : manager.GetValidMoves(gameState),
+    [gameState, isAiAutoTurn, manager],
+  );
   const [selectedWallPosition, setSelectedWallPosition] = useState<
     { x: number; y: number } | undefined
   >(undefined);
@@ -60,31 +114,81 @@ export default function Board({ boardSize, manager }: BoardProps) {
   }
 
   useEffect(() => {
-    const shouldAutoPlayAiTurn =
-      controls.type === "1v1" &&
-      controls.diff !== "none" &&
-      controls.diff !== "online" &&
-      gameState.status === "in_progress" &&
-      gameState.turn === "player2";
+    return () => {
+      minimaxWorkerClient.dispose();
+    };
+  }, [minimaxWorkerClient]);
+
+  useEffect(() => {
+    const shouldAutoPlayAiTurn = isAiAutoTurn;
 
     if (!shouldAutoPlayAiTurn) {
       return;
     }
 
-    const aiResult =
-      controls.diff === "easy"
-        ? manager.GetAIMoveEasy(gameState)
-        : controls.diff === "normal"
-          ? manager.GetAIMoveNormal(gameState)
-          : controls.diff === "hard"
-            ? manager.GetAIMoveHard(gameState)
-            : manager.GetAIMoveExpert(gameState);
+    let isCancelled = false;
+    const aiTurnStartMs = performance.now();
 
-    if (aiResult.isSuccess) {
+    const runBackgroundMinimax = async () => {
+      if (controls.diff === "none" || controls.diff === "online") {
+        return;
+      }
+
+      let aiResult;
+      let usedFallback = false;
+      let fallbackReason = "";
+      try {
+        aiResult = await minimaxWorkerClient.getAIMove(
+          gameState,
+          controls.diff,
+        );
+      } catch (error) {
+        // Fallback keeps gameplay working if worker crashes/times out.
+        usedFallback = true;
+        fallbackReason =
+          error instanceof Error ? error.message : "unknown worker error";
+        aiResult =
+          controls.diff === "easy"
+            ? manager.GetAIMoveEasy(gameState)
+            : controls.diff === "normal"
+              ? manager.GetAIMoveNormal(gameState)
+              : controls.diff === "hard"
+                ? manager.GetAIMoveHard(gameState)
+                : manager.GetAIMoveExpert(gameState);
+      }
+
+      if (isCancelled || !aiResult.isSuccess) {
+        return;
+      }
+
       setGameState(aiResult.gameState);
       setSelectedWallPosition(undefined);
-    }
-  }, [controls.diff, controls.type, gameState, manager, setGameState]);
+
+      const aiTurnElapsedMs = performance.now() - aiTurnStartMs;
+      if (usedFallback) {
+        console.log(
+          `[AI turn latency] ${aiTurnElapsedMs.toFixed(2)}ms (fallback: ${fallbackReason})`,
+        );
+      } else {
+        console.log(
+          `[AI turn latency] ${aiTurnElapsedMs.toFixed(2)}ms (worker)`,
+        );
+      }
+    };
+
+    void runBackgroundMinimax();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    controls.diff,
+    controls.type,
+    gameState,
+    isAiAutoTurn,
+    minimaxWorkerClient,
+    setGameState,
+  ]);
 
   // Create a map of player positions for quick lookup
   const playerPositions: Record<string, number> = {};
@@ -205,18 +309,49 @@ export default function Board({ boardSize, manager }: BoardProps) {
 
   return (
     <div className="board-section">
-      <div
-        className="board"
-        style={
-          {
-            "--tile-size": responsiveTileSize,
-            gridTemplateColumns: trackTemplate,
-            gridTemplateRows: trackTemplate,
-          } as CSSProperties
-        }
-      >
-        {cells}
+      <div className="board-and-walls">
+        <aside className="walls-panel walls-panel-left">
+          {playerSideInfo.left.map((player) => (
+            <div
+              key={player.key}
+              className={`walls-chip ${player.colorClass} ${gameState.turn === player.key ? "is-current-turn" : ""}`}
+            >
+              <span className="walls-chip-label">{player.label}</span>
+              <span className="walls-chip-value">
+                Walls: {player.state?.wallsRemaining ?? 0}
+              </span>
+            </div>
+          ))}
+        </aside>
+
+        <div
+          className="board"
+          style={
+            {
+              "--tile-size": responsiveTileSize,
+              gridTemplateColumns: trackTemplate,
+              gridTemplateRows: trackTemplate,
+            } as CSSProperties
+          }
+        >
+          {cells}
+        </div>
+
+        <aside className="walls-panel walls-panel-right">
+          {playerSideInfo.right.map((player) => (
+            <div
+              key={player.key}
+              className={`walls-chip ${player.colorClass} ${gameState.turn === player.key ? "is-current-turn" : ""}`}
+            >
+              <span className="walls-chip-label">{player.label}</span>
+              <span className="walls-chip-value">
+                Walls: {player.state?.wallsRemaining ?? 0}
+              </span>
+            </div>
+          ))}
+        </aside>
       </div>
+
       <button
         className="confirm-wall-button"
         disabled={!selectedWallPosition}

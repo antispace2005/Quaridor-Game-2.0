@@ -829,14 +829,14 @@ export class OfflineGameManager implements GameManager {
       }
 
       if (maximizing) {
-        if (searchResult.score > bestScore) {
+        if (searchResult.score > bestScore || !bestMoveResult) {
           bestScore = searchResult.score;
           bestMoveResult = childResult;
         }
 
         alpha = Math.max(alpha, bestScore);
       } else {
-        if (searchResult.score < bestScore) {
+        if (searchResult.score < bestScore || !bestMoveResult) {
           bestScore = searchResult.score;
           bestMoveResult = childResult;
         }

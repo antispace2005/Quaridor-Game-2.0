@@ -1,4 +1,8 @@
 .board-section {
+	--pawn-color-0: #ff6b6b;
+	--pawn-color-1: #4ecdc4;
+	--pawn-color-2: #ffd93d;
+	--pawn-color-3: #6c5ce7;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -8,13 +12,82 @@
 	padding: 8px;
 }
 
+.board-and-walls {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	width: 100%;
+}
+
+.walls-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 120px;
+}
+
+.walls-panel-left {
+	align-items: flex-end;
+}
+
+.walls-panel-right {
+	align-items: flex-start;
+}
+
+.walls-chip {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 8px 10px;
+	border: 1px solid #727272;
+	border-radius: 10px;
+	background: #efeadf;
+	min-width: 110px;
+	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+	transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.walls-chip-label {
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1.2;
+	color: #2a2a2a;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.walls-chip-value {
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1.2;
+	color: #141414;
+}
+
+.walls-chip.player-0 {
+	border-left: 5px solid var(--pawn-color-0);
+}
+
+.walls-chip.player-1 {
+	border-left: 5px solid var(--pawn-color-1);
+}
+
+.walls-chip.player-2 {
+	border-left: 5px solid var(--pawn-color-2);
+}
+
+.walls-chip.player-3 {
+	border-left: 5px solid var(--pawn-color-3);
+}
+
+.walls-chip.is-current-turn {
+	transform: translateY(-1px);
+	box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+}
+
 .board {
 	--tile-size: 56px;
 	--wall-size: calc(var(--tile-size) / 4);
-	--pawn-color-0: #ff6b6b;
-	--pawn-color-1: #4ecdc4;
-	--pawn-color-2: #ffd93d;
-	--pawn-color-3: #6c5ce7;
 	--wall-color: #2d3436;
 	display: grid;
 	gap: 0;
@@ -61,4 +134,23 @@
 	box-shadow: none;
 	opacity: 0.7;
 	cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+	.walls-panel {
+		min-width: 92px;
+	}
+
+	.walls-chip {
+		padding: 6px 8px;
+		min-width: 86px;
+	}
+
+	.walls-chip-label {
+		font-size: 10px;
+	}
+
+	.walls-chip-value {
+		font-size: 12px;
+	}
 }
