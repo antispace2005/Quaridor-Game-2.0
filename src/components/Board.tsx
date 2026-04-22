@@ -144,6 +144,7 @@ export default function Board({
       }
 
       setIsAiThinking(true);
+
       let aiResult;
       try {
         aiResult = await minimaxWorkerClient.getAIMove(
@@ -153,6 +154,7 @@ export default function Board({
       } catch (error) {
         // Fallback keeps gameplay working if worker crashes/times out.
         void error;
+        await new Promise((resolve) => setTimeout(resolve, 50)); // Small buffer for UI paint
         aiResult =
           controls.diff === "easy"
             ? manager.GetAIMoveEasy(gameState)
