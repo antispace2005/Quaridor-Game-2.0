@@ -36,6 +36,8 @@ interface MinimaxTimingRun {
   failedActions: number;
   prunes: number;
   evaluateMs: number;
+  shortestPathMs: number;
+  shortestPathCalls: number;
   candidateGenerationMs: number;
   applyActionMs: number;
   recursionMs: number;
@@ -53,6 +55,9 @@ const MINIMAX_TIMING_HISTORY_LIMIT = 50;
 
 export class OfflineGameManager implements GameManager {
   private tileLayoutByGridLimit = new Map<number, TileLayout>();
+  private aiPlayerKey: PlayerKey | null = null;
+  private aiPlayerId: 0 | 1 | 2 | 3 | null = null;
+  private activeTimingRun: MinimaxTimingRun | null = null;
 
   GetValidMoves(gameState: GameState): ValidMoves {
     if (gameState.status !== "in_progress") {
@@ -82,9 +87,42 @@ export class OfflineGameManager implements GameManager {
       };
     }
 
-    const occupiedTiles = this.getOccupiedTiles(gameState, playerKey);
-    const movementBlockSet = this.getMovementBlockSet(gameState);
     const gridLimit = gameState.boardSize * 2 - 1;
+    const gridSize = gridLimit * gridLimit;
+    const occupiedGrid = new Uint8Array(gridSize);
+    const blockedGrid = new Uint8Array(gridSize);
+
+    PLAYER_ORDER.forEach((otherPlayerKey) => {
+      if (otherPlayerKey === playerKey) {
+        return;
+      }
+
+      const otherPlayer = gameState.players[otherPlayerKey];
+      if (!otherPlayer) {
+        return;
+      }
+
+      occupiedGrid[otherPlayer.position.y * gridLimit + otherPlayer.position.x] = 1;
+    });
+
+    gameState.walls.forEach((wall) => {
+      const blockedCells = this.getWallBlockedCells(wall);
+      blockedCells.forEach((cell) => {
+        blockedGrid[cell.y * gridLimit + cell.x] = 1;
+      });
+    });
+
+    const isTileInside = (x: number, y: number) => (
+      x >= 0 && y >= 0 && x < gridLimit && y < gridLimit
+    );
+    const isOccupied = (x: number, y: number) => occupiedGrid[y * gridLimit + x] === 1;
+    const isBlocked = (x: number, y: number) => blockedGrid[y * gridLimit + x] === 1;
+    const getIndexFromCoords = (x: number, y: number): number => {
+      const tileX = x / 2;
+      const tileY = y / 2;
+      return tileY * tilesPerRow + tileX;
+    };
+
     const exploredNodes: string[] = [];
     const { tilePositions, tileBits, singleBitToIndex, tilesPerRow } = this.getTileLayout(gridLimit);
 
@@ -113,22 +151,110 @@ export class OfflineGameManager implements GameManager {
         return cachedAdjacencyMask;
       }
 
-      const position = tilePositions[nodeIndex];
-      const nextMoves = this.getValidPlayerMovesFromPosition(
-        position,
-        occupiedTiles,
-        movementBlockSet,
-        gridLimit,
-      );
-
       let adjacencyMask = 0n;
-      nextMoves.forEach((moveDirection) => {
-        const nextPosition = this.getNextPosition(position, moveDirection);
-        const nextIndex = this.getTileIndexFromPosition(nextPosition, tilesPerRow);
-        if (nextIndex !== undefined) {
-          adjacencyMask |= tileBits[nextIndex];
+      const position = tilePositions[nodeIndex];
+
+      const addDirectionMoves = (
+        moveX: number,
+        moveY: number,
+        wallX: number,
+        wallY: number,
+        diagonalA: { landingX: number; landingY: number; wallCheckX: number; wallCheckY: number },
+        diagonalB: { landingX: number; landingY: number; wallCheckX: number; wallCheckY: number },
+      ) => {
+        const targetX = position.x + moveX;
+        const targetY = position.y + moveY;
+        const wallPosX = position.x + wallX;
+        const wallPosY = position.y + wallY;
+
+        if (!isTileInside(targetX, targetY) || isBlocked(wallPosX, wallPosY)) {
+          return;
         }
-      });
+
+        if (!isOccupied(targetX, targetY)) {
+          const nextIndex = getIndexFromCoords(targetX, targetY);
+          adjacencyMask |= tileBits[nextIndex];
+          return;
+        }
+
+        const jumpX = position.x + moveX * 2;
+        const jumpY = position.y + moveY * 2;
+        const jumpWallX = targetX + wallX;
+        const jumpWallY = targetY + wallY;
+
+        const jumpBlocked =
+          !isTileInside(jumpX, jumpY) ||
+          isBlocked(jumpWallX, jumpWallY);
+
+        if (!jumpBlocked && !isOccupied(jumpX, jumpY)) {
+          const jumpIndex = getIndexFromCoords(jumpX, jumpY);
+          adjacencyMask |= tileBits[jumpIndex];
+          return;
+        }
+
+        const diagAX = position.x + diagonalA.landingX;
+        const diagAY = position.y + diagonalA.landingY;
+        const diagAWallX = position.x + diagonalA.wallCheckX;
+        const diagAWallY = position.y + diagonalA.wallCheckY;
+        if (
+          isTileInside(diagAX, diagAY) &&
+          !isBlocked(diagAWallX, diagAWallY) &&
+          !isOccupied(diagAX, diagAY)
+        ) {
+          const diagonalIndex = getIndexFromCoords(diagAX, diagAY);
+          adjacencyMask |= tileBits[diagonalIndex];
+        }
+
+        const diagBX = position.x + diagonalB.landingX;
+        const diagBY = position.y + diagonalB.landingY;
+        const diagBWallX = position.x + diagonalB.wallCheckX;
+        const diagBWallY = position.y + diagonalB.wallCheckY;
+        if (
+          isTileInside(diagBX, diagBY) &&
+          !isBlocked(diagBWallX, diagBWallY) &&
+          !isOccupied(diagBX, diagBY)
+        ) {
+          const diagonalIndex = getIndexFromCoords(diagBX, diagBY);
+          adjacencyMask |= tileBits[diagonalIndex];
+        }
+      };
+
+      // up
+      addDirectionMoves(
+        0,
+        -2,
+        0,
+        -1,
+        { landingX: -2, landingY: -2, wallCheckX: -1, wallCheckY: -2 },
+        { landingX: 2, landingY: -2, wallCheckX: 1, wallCheckY: -2 },
+      );
+      // down
+      addDirectionMoves(
+        0,
+        2,
+        0,
+        1,
+        { landingX: -2, landingY: 2, wallCheckX: -1, wallCheckY: 2 },
+        { landingX: 2, landingY: 2, wallCheckX: 1, wallCheckY: 2 },
+      );
+      // left
+      addDirectionMoves(
+        -2,
+        0,
+        -1,
+        0,
+        { landingX: -2, landingY: -2, wallCheckX: -2, wallCheckY: -1 },
+        { landingX: -2, landingY: 2, wallCheckX: -2, wallCheckY: 1 },
+      );
+      // right
+      addDirectionMoves(
+        2,
+        0,
+        1,
+        0,
+        { landingX: 2, landingY: -2, wallCheckX: 2, wallCheckY: -1 },
+        { landingX: 2, landingY: 2, wallCheckX: 2, wallCheckY: 1 },
+      );
 
       adjacencyMasks[nodeIndex] = adjacencyMask;
       return adjacencyMask;
@@ -426,11 +552,20 @@ export class OfflineGameManager implements GameManager {
 
     const startTimeMs = performance.now();
 
-    const aiPlayerKey = gameState.turn as PlayerKey;
+    this.aiPlayerKey = gameState.turn as PlayerKey;
+    this.aiPlayerId = this.getPlayerIdFromPlayerKey(this.aiPlayerKey) ?? null;
+
+    if (this.aiPlayerId === null) {
+      return {
+        gameState,
+        isSuccess: false,
+      };
+    }
+
     const timingRun: MinimaxTimingRun = {
       runId: Date.now(),
       depth,
-      turn: aiPlayerKey,
+      turn: this.aiPlayerKey,
       totalMs: 0,
       nodeVisits: 0,
       leafEvaluations: 0,
@@ -438,12 +573,21 @@ export class OfflineGameManager implements GameManager {
       failedActions: 0,
       prunes: 0,
       evaluateMs: 0,
+      shortestPathMs: 0,
+      shortestPathCalls: 0,
       candidateGenerationMs: 0,
       applyActionMs: 0,
       recursionMs: 0,
     };
 
-    const searchResult = this.minimax(gameState, depth, -Infinity, Infinity, aiPlayerKey, timingRun);
+    const searchResult = (() => {
+      this.activeTimingRun = timingRun;
+      try {
+        return this.minimax(gameState, depth, -Infinity, Infinity, timingRun);
+      } finally {
+        this.activeTimingRun = null;
+      }
+    })();
 
     const elapsedTimeMs = performance.now() - startTimeMs;
     timingRun.totalMs = elapsedTimeMs;
@@ -468,16 +612,22 @@ export class OfflineGameManager implements GameManager {
     depth: number,
     alpha: number,
     beta: number,
-    aiPlayerKey: PlayerKey,
     timingRun?: MinimaxTimingRun,
   ): { score: number; moveResult: MoveResult | null } {
+    if (!this.aiPlayerKey || this.aiPlayerId === null) {
+      return {
+        score: Number.NEGATIVE_INFINITY,
+        moveResult: null,
+      };
+    }
+
     if (timingRun) {
       timingRun.nodeVisits += 1;
     }
 
     if (depth === 0 || gameState.status !== "in_progress") {
       const evaluateStartMs = timingRun ? performance.now() : 0;
-      const score = this.evaluateGameState(gameState, aiPlayerKey);
+      const score = this.evaluateGameState(gameState);
 
       if (timingRun) {
         timingRun.leafEvaluations += 1;
@@ -498,7 +648,7 @@ export class OfflineGameManager implements GameManager {
 
     if (actions.length === 0) {
       const evaluateStartMs = timingRun ? performance.now() : 0;
-      const score = this.evaluateGameState(gameState, aiPlayerKey);
+      const score = this.evaluateGameState(gameState);
 
       if (timingRun) {
         timingRun.leafEvaluations += 1;
@@ -515,7 +665,7 @@ export class OfflineGameManager implements GameManager {
       timingRun.actionCount += actions.length;
     }
 
-    const maximizing = gameState.turn === aiPlayerKey;
+    const maximizing = gameState.turn === this.aiPlayerKey;
     let bestScore = maximizing ? -Infinity : Infinity;
     let bestMoveResult: MoveResult | null = null;
 
@@ -540,7 +690,6 @@ export class OfflineGameManager implements GameManager {
         depth - 1,
         alpha,
         beta,
-        aiPlayerKey,
         timingRun,
       );
       if (timingRun) {
@@ -610,12 +759,18 @@ export class OfflineGameManager implements GameManager {
     }
 
     const averageMs = store.totalMs / store.runs;
+    const averageShortestPathMs = run.shortestPathCalls > 0
+      ? run.shortestPathMs / run.shortestPathCalls
+      : 0;
 
     console.log("[Minimax timing run]", run);
     console.log("[Minimax timing totals]", {
       runs: store.runs,
       totalMs: Number(store.totalMs.toFixed(2)),
       averageMs: Number(averageMs.toFixed(2)),
+      shortestPathMs: Number(run.shortestPathMs.toFixed(2)),
+      shortestPathCalls: run.shortestPathCalls,
+      shortestPathAvgMs: Number(averageShortestPathMs.toFixed(4)),
       historySize: store.history.length,
       globalVariable: MINIMAX_TIMING_GLOBAL_KEY,
     });
@@ -751,28 +906,27 @@ export class OfflineGameManager implements GameManager {
     }
   }
 
-  private evaluateGameState(gameState: GameState, aiPlayerKey: PlayerKey): number {
-    if (gameState.status === "finished") {
-      return gameState.turn === aiPlayerKey ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
-    }
-
-    const aiPlayerId = this.getPlayerIdFromPlayerKey(aiPlayerKey);
-    if (aiPlayerId === undefined) {
+  private evaluateGameState(gameState: GameState): number {
+    if (!this.aiPlayerKey || this.aiPlayerId === null) {
       return Number.NEGATIVE_INFINITY;
     }
 
-    const aiPath = this.getShortestPathMovesNeeded(gameState, aiPlayerId);
+    if (gameState.status === "finished") {
+      return gameState.turn === this.aiPlayerKey ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+    }
+
+    const aiPath = this.getShortestPathMovesNeeded(gameState, this.aiPlayerId);
     if (!Number.isFinite(aiPath)) {
       return Number.NEGATIVE_INFINITY;
     }
 
-    const opponentPlayerIds = this.getActivePlayerIds(gameState).filter((playerId) => playerId !== aiPlayerId);
+    const opponentPlayerIds = this.getActivePlayerIds(gameState).filter((playerId) => playerId !== this.aiPlayerId);
     const opponentPaths = opponentPlayerIds
       .map((playerId) => this.getShortestPathMovesNeeded(gameState, playerId))
       .filter((pathLength) => Number.isFinite(pathLength));
 
     const closestOpponentPath = opponentPaths.length > 0 ? Math.min(...opponentPaths) : aiPath;
-    const aiWallsRemaining = gameState.players[aiPlayerKey]?.wallsRemaining ?? 0;
+    const aiWallsRemaining = gameState.players[this.aiPlayerKey]?.wallsRemaining ?? 0;
     const opponentWalls = opponentPlayerIds
       .map((playerId) => {
         const playerKey = this.getPlayerKeyFromPlayerId(playerId);
@@ -790,7 +944,14 @@ export class OfflineGameManager implements GameManager {
   }
 
   private getShortestPathMovesNeeded(gameState: GameState, playerId: 0 | 1 | 2 | 3): number {
+    const shortestPathStartMs = this.activeTimingRun ? performance.now() : 0;
     const result = this.floodShortestPath(gameState, playerId);
+
+    if (this.activeTimingRun) {
+      this.activeTimingRun.shortestPathCalls += 1;
+      this.activeTimingRun.shortestPathMs += performance.now() - shortestPathStartMs;
+    }
+
     return result.found ? result.movesNeeded : Number.POSITIVE_INFINITY;
   }
 
