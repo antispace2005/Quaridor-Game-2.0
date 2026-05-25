@@ -77,25 +77,21 @@ export default function MainMenu({
           <section className="main-menu__section">
             <h2>AI Difficulty</h2>
             <div className="main-menu__button-row">
-              {(["easy", "normal", "hard", "expert"] as const).map(
-                (difficulty) => (
-                  <button
-                    key={difficulty}
-                    type="button"
-                    className={
-                      currentSetup.diff === difficulty ? "selected" : ""
-                    }
-                    onClick={() =>
-                      onSetupChange({
-                        ...currentSetup,
-                        diff: difficulty,
-                      })
-                    }
-                  >
-                    {difficulty}
-                  </button>
-                ),
-              )}
+              {(["easy", "normal", "hard"] as const).map((difficulty) => (
+                <button
+                  key={difficulty}
+                  type="button"
+                  className={currentSetup.diff === difficulty ? "selected" : ""}
+                  onClick={() =>
+                    onSetupChange({
+                      ...currentSetup,
+                      diff: difficulty,
+                    })
+                  }
+                >
+                  {difficulty}
+                </button>
+              ))}
             </div>
           </section>
         ) : (
