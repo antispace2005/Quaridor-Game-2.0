@@ -68,37 +68,15 @@ Key files:
   - `normal` → depth 2
   - `hard` → depth 3
 
-## Developer notes
-
-- Worker timeout: If the worker takes longer than the configured timeout the client will terminate it and reject the request. See `WORKER_RESPONSE_TIMEOUT_MS` in `src/Managers/MinimaxWorkerClient.ts`.
-- Board coordinate system: The implementation represents both tiles and wall/grid positions on a single integer grid (`boardSize * 2 - 1`). Tiles are at even coordinates, walls at odd/even combinations — see `OfflineGameManager` for the mapping logic.
-- Evaluation: The AI evaluates states by comparing shortest-path lengths and remaining walls (see `evaluateGameState` in `OfflineGameManager.ts`).
-
 ## Extending or testing the AI
 
 - To experiment with evaluation or search, modify `OfflineGameManager.evaluateGameState` or adjust the search depth mapping in `getAIDepth`.
 - To run the AI on the main thread (for debugging), you can call the manager directly: `new OfflineGameManager().GetAIMoveEasy(gameState)`.
 
-## Contributing
-
-Contributions are welcome — open a PR or file an issue. Suggested small tasks:
-
-- Add unit tests around `OfflineGameManager` move generation and path checks.
-- Add integration tests for UI flows (placing walls, winning condition).
-
-## Known limitations
-
-- No automated tests are included in the repository.
-- Worker timeout may abort slow searches on large boards or very deep search depths.
-
 ## License
 
 This repository does not include an explicit license file. Add one if you plan to publish or share the code.
 
----
+## Demo Video
 
-If you want, I can also:
-
-- Add a short CONTRIBUTING.md or CODE_OF_CONDUCT
-- Add unit tests for `OfflineGameManager` examples
-- Add examples or GIFs demonstrating gameplay
+https://drive.google.com/file/d/1ZZ-5N3z52uRnvudt2AswxztYRmswV817/view?usp=sharing
